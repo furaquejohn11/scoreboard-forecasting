@@ -1,8 +1,16 @@
 import { Upload } from "@/components/upload"
 import { Sidebar } from "@/components/sidebar"
-import "./globals.css";
+import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 
-export default function Home() {
+export default async function Home() {
+  const cookie = await cookies();
+  const token = await cookie.get('token')?.value;
+
+  if (!token) {
+    redirect('/login');
+  }
+
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />

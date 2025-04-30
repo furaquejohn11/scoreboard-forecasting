@@ -24,6 +24,8 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { useRouter } from "next/navigation"
+import { DialogTitle } from "@/components/ui/dialog"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -44,6 +46,17 @@ export function Sidebar({ className }: SidebarProps) {
   useEffect(() => {
     localStorage.setItem("sidebar-collapsed", isCollapsed.toString())
   }, [isCollapsed])
+
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    // Optional: remove token from cookie or localStorage if you're storing it
+    localStorage.removeItem("token") // if used
+    document.cookie = "token=; Max-Age=0; path=/; domain=localhost; expires=Thu, 01 Jan 1970 00:00:00 GMT;" // clear auth cookie if applicable
+
+    // Redirect to login
+    router.push("/login")
+  }
 
   const routes = [
     {
@@ -99,6 +112,9 @@ export function Sidebar({ className }: SidebarProps) {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="p-0">
+          {/* Add DialogTitle for accessibility - it can be visually hidden via CSS if needed */}
+          <DialogTitle className="sr-only">Navigation Menu</DialogTitle>
+          
           <div className="flex flex-col h-full">
             <div className="px-6 py-4 border-b">
               <div className="flex items-center justify-between">
@@ -106,9 +122,9 @@ export function Sidebar({ className }: SidebarProps) {
                   <BarChart3 className="h-6 w-6 text-emerald-600" />
                   <span className="text-xl font-bold">WelfareCast</span>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
+                {/* <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
                   <X className="h-5 w-5" />
-                </Button>
+                </Button> */}
               </div>
             </div>
             <ScrollArea className="flex-1">
@@ -142,11 +158,9 @@ export function Sidebar({ className }: SidebarProps) {
                     <p className="text-xs text-gray-500">admin@welfare.gov</p>
                   </div>
                 </div>
-                <Link href="/login">
-                  <Button variant="ghost" size="icon">
-                    <LogOut className="h-5 w-5" />
-                  </Button>
-                </Link>
+                <Button variant="ghost" size="icon" onClick={handleLogout}>
+                  <LogOut className="h-5 w-5" />
+                </Button>
               </div>
             </div>
           </div>
@@ -224,11 +238,9 @@ export function Sidebar({ className }: SidebarProps) {
                 </TooltipContent>
               </Tooltip>
               {!isCollapsed && (
-                <Link href="/login">
-                  <Button variant="ghost" size="icon">
-                    <LogOut className="h-5 w-5" />
-                  </Button>
-                </Link>
+                <Button variant="ghost" size="icon" onClick={handleLogout}>
+                  <LogOut className="h-5 w-5" />
+                </Button>
               )}
             </div>
           </div>

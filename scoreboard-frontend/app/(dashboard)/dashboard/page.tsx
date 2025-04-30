@@ -4,8 +4,16 @@ import { RegionalInsights } from "@/components/regional-insights"
 import { AnomalyHighlights } from "@/components/anomaly-highlights"
 import { FeatureImportanceChart } from "@/components/feature-importance-chart"
 import { BeneficiaryTrends } from "@/components/beneficiary-trends"
+import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const cookie = await cookies();
+  const token = await cookie.get('token')?.value;
+
+  if (!token) {
+    redirect('/login');
+  }
   return (
     <main className="container mx-auto px-4 py-8">
       <div className="max-w-7xl mx-auto">
