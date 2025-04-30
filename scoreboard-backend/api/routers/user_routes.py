@@ -2,19 +2,16 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 import pandas as pd
 import io
 
+from api.entities import User
+
 router = APIRouter()
 
-@router.post("/csv-row-count")
-async def count_csv_rows(file: UploadFile = File(...)):
-    try:
-        # Read the uploaded CSV file
-        content = await file.read()
-        csv_data = io.StringIO(content.decode('utf-8'))
-        
-        # Use pandas to read CSV and count rows
-        df = pd.read_csv(csv_data)
-        row_count = len(df)
-        
-        return {"filename": file.filename, "row_count": row_count}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading CSV file: {str(e)}")
+
+# TODO: Create a login and signup. Check the entities and dtos folder for reference
+@router.post("/login")
+async def login() -> User:
+    ...
+
+@router.post("/signup")
+async def signup() -> User:
+    ...
