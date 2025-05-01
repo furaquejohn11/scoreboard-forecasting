@@ -18,4 +18,4 @@ def index():
 
 
 app.include_router(user_router, prefix="/api/user", tags=['User'])
-app.include_router(file_router, prefix="/api/user", tags=['User'])
+app.include_router(file_router, prefix="/api/file", tags=['File'])
