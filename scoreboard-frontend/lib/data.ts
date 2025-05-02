@@ -1,4 +1,4 @@
-import { TotalBeneficiaries, BeneficiariesByYear } from "./types";
+import { TotalBeneficiaries, BeneficiariesByYear, HighestGrowthDistrictResponse } from "./types";
 
 const fileEndpoint = "http://127.0.0.1:8000/api/file";
 
@@ -13,7 +13,11 @@ export const getTotalBeneficiaries = async (): Promise<TotalBeneficiaries> => {
       });
   
       if (!response.ok) {
-        throw new Error(`Failed to fetch: ${response.statusText}`);
+        return {
+          message: "Failed to fetch",
+          total_beneficiaries: 0,
+          beneficiaries_by_year: [],
+        };
       }
   
       const data: TotalBeneficiaries = await response.json();
@@ -29,3 +33,36 @@ export const getTotalBeneficiaries = async (): Promise<TotalBeneficiaries> => {
       };
     }
   };
+
+  export const getHighestGrowthDistrict = async (): Promise<HighestGrowthDistrictResponse> => {
+    try {
+      const response = await fetch(`${fileEndpoint}/highest-growth-district`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      })
+  
+      if (!response.ok) {
+        return {
+          counts_by_year: {
+            "2025": {},
+          },
+          highest_growth_by_year: [],
+        }
+      }
+  
+      const data: HighestGrowthDistrictResponse = await response.json()
+      return data
+    } catch (error) {
+      console.error("Error fetching highest growth district:", error)
+  
+      // Return default fallback if fetch fails
+      return {
+        counts_by_year: {
+          "2025": {},
+        },
+        highest_growth_by_year: [],
+      }
+    }
+  }

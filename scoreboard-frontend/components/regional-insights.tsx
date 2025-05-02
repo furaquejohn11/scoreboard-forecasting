@@ -1,28 +1,82 @@
-"use client"
+'use client'
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { getHighestGrowthDistrict } from "@/lib/data"
+
+interface PieData {
+  name: string
+  value: number
+  percentage: number
+}
 
 export function RegionalInsights() {
-  // Sample data - would come from your processed CSV
-  const data = [
-    { name: "North", value: 3100, percentage: 29.8 },
-    { name: "South", value: 3900, percentage: 37.5 },
-    { name: "East", value: 2400, percentage: 23.1 },
-    { name: "West", value: 2800, percentage: 26.9 },
-    { name: "Central", value: 3600, percentage: 34.6 },
+  const [pieData, setPieData] = useState<PieData[]>([])
+
+  useEffect(() => {
+    async function fetchData() {
+      const data = await getHighestGrowthDistrict()
+      const counts = data.counts_by_year["2025"]
+  
+      let formatted: PieData[] = []
+  
+      if (counts && Object.keys(counts).length > 0) {
+        formatted = Object.entries(counts).map(([district, stats]) => ({
+          name: district,
+          value: stats.count,
+          percentage: stats.percent,
+        }))
+      } else {
+        // Fallback: default districts with 0s
+        formatted = [
+          { name: "District A", value: 0, percentage: 0 },
+          { name: "District B", value: 0, percentage: 0 },
+          { name: "District C", value: 0, percentage: 0 },
+        ]
+      }
+  
+      setPieData(formatted)
+    }
+  
+    fetchData()
+  }, [])
+
+  const COLORS = [
+    "#10b981", "#0ea5e9", "#8b5cf6",
+    "#f59e0b", "#ef4444", "#14b8a6", "#6366f1"
   ]
 
-  const COLORS = ["#10b981", "#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444"]
-
-  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
+  const renderCustomizedLabel = ({
+    cx,
+    cy,
+    midAngle,
+    innerRadius,
+    outerRadius,
+    percent,
+    index,
+  }: {
+    cx: number
+    cy: number
+    midAngle: number
+    innerRadius: number
+    outerRadius: number
+    percent: number
+    index: number
+  }) => {
     const RADIAN = Math.PI / 180
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5
     const x = cx + radius * Math.cos(-midAngle * RADIAN)
     const y = cy + radius * Math.sin(-midAngle * RADIAN)
 
     return (
-      <text x={x} y={y} fill="white" textAnchor={x > cx ? "start" : "end"} dominantBaseline="central">
+      <text
+        x={x}
+        y={y}
+        fill="white"
+        textAnchor={x > cx ? "start" : "end"}
+        dominantBaseline="central"
+      >
         {`${(percent * 100).toFixed(0)}%`}
       </text>
     )
@@ -32,14 +86,16 @@ export function RegionalInsights() {
     <Card className="col-span-1">
       <CardHeader>
         <CardTitle>Regional Distribution (2025)</CardTitle>
-        <CardDescription>Predicted beneficiary distribution by region</CardDescription>
+        <CardDescription>
+          Predicted beneficiary distribution by district
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={data}
+                data={pieData}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
@@ -48,22 +104,34 @@ export function RegionalInsights() {
                 fill="#8884d8"
                 dataKey="value"
               >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                {pieData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
                 ))}
               </Pie>
-              <Tooltip formatter={(value) => value.toLocaleString()} labelFormatter={(label) => `Region: ${label}`} />
+              <Tooltip
+                formatter={(value) => value.toLocaleString()}
+                labelFormatter={(label) => `District: ${label}`}
+              />
               <Legend />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
         <div className="mt-4 space-y-2">
-          <h4 className="text-sm font-medium">Regional Analysis:</h4>
+          <h4 className="text-sm font-medium">District Analysis:</h4>
           <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
-            <li>South region has the highest concentration of beneficiaries</li>
-            <li>East region shows the fastest growth rate year-over-year</li>
-            <li>Central region requires additional resource allocation</li>
+            {pieData.length > 0 ? (
+              pieData.map((d) => (
+                <li key={d.name}>
+                  {d.name} has {d.value} beneficiaries ({d.percentage}%)
+                </li>
+              ))
+            ) : (
+              <li>Loading data...</li>
+            )}
           </ul>
         </div>
       </CardContent>
