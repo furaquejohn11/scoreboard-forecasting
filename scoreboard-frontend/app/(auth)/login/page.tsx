@@ -17,21 +17,35 @@ import { BarChart3 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Dummy credentials
-    if (email === 'user1' && password === 'pass1') {
-      document.cookie = `token=dummy-token; path=/`;
+    // For testing purposes only. Use jwt for better security
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/user/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!response.ok) {
+        throw new Error('Invalid credentials');
+      }
+
+      const user = await response.json();
+      document.cookie = `token=${JSON.stringify(user)}; path=/; max-age=1800`; // 30 minutes
       router.push('/dashboard');
-    } else {
-      setError('Invalid credentials');
-    }
-  };
+
+      } catch (err) {
+        setError('Login failed. Try again.');
+      }
+    };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -54,15 +68,15 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4">
                 <div className="grid gap-2">
-                  <label htmlFor="email" className="text-sm font-medium leading-none">
-                    Email
+                  <label htmlFor="username" className="text-sm font-medium leading-none">
+                    Username
                   </label>
                   <Input
-                    id="email"
+                    id="username"
                     type="text"
                     placeholder="user1"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     required
                   />
                 </div>

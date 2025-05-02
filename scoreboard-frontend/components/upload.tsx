@@ -32,36 +32,54 @@ export function Upload() {
       return
     }
 
-    if (!file.name.endsWith(".csv")) {
-      setError("Please upload a valid CSV file")
-      return
+    const validExtensions = [".csv", ".xlsx", ".xls"];
+    if (!validExtensions.some(ext => file.name.endsWith(ext))) {
+      setError("Please upload a valid CSV or Excel file");
+      return;
     }
 
     setIsUploading(true)
     setError(null)
 
     try {
-      // Read the file
-      const text = await file.text()
+      // // Read the file
+      // const text = await file.text()
 
-      // Process the data
-      setIsUploading(false)
-      setIsProcessing(true)
+      // // Process the data
+      // setIsUploading(false)
+      // setIsProcessing(true)
 
-      // Process the CSV data and generate forecasts
-      const forecastResults = await processData(text)
-      setResults(forecastResults)
+      // // Process the CSV data and generate forecasts
+      // const forecastResults = await processData(text)
+      // setResults(forecastResults)
 
       // Navigate to dashboard after successful processing
-      router.push("/dashboard")
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch("http://127.0.0.1:8000/api/file/upload-excel", {
+          method: "POST",
+          body: formData,
+        });    
+        if (!response.ok) {
+          throw new Error('Upload Failed');
+        }
+  
+        const fileRowCount = await response.json();
+        setResults(fileRowCount);
+        // alert(fileRowCount['row_count']);
+
+
+      // router.push("/dashboard")
     } catch (err) {
-      setError("Error processing the file. Please ensure it's a valid CSV with the correct format.")
+      setError("Error processing the file. Please ensure it's a valid CSV/Excelk with the correct format.")
       console.error(err)
     } finally {
       setIsUploading(false)
       setIsProcessing(false)
     }
   }
+  
 
   const handlePreviewDashboard = () => {
     // Navigate to dashboard with sample data
@@ -128,7 +146,14 @@ export function Upload() {
         </CardFooter>
       </Card>
 
-      {results && <ForecastResults results={results} />}
+      {/* {results && <ForecastResults results={results} />} */}
+      {results && (
+      <div>
+        <h1>{`File Name: ${results["filename"]}`}</h1>
+        <h1>{`Message: ${results["message"]}`}</h1>
+        <h1>{`Total Rows: ${results["row_count"]}`}</h1>
+      </div>
+    )}
     </div>
   )
 }
