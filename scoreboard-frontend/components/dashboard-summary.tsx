@@ -1,9 +1,12 @@
-"use client"
+// "use client"
 
 import { Card, CardContent } from "@/components/ui/card"
+import { getTotalBeneficiaries } from "@/lib/data"
 import { ArrowUpRight, Users, AlertTriangle, TrendingUp, MapPin } from "lucide-react"
 
-export function DashboardSummary() {
+export async function DashboardSummary() {
+
+  const totalBeneficiaries = await getTotalBeneficiaries();
   // This would normally come from your data processing results
   const summaryData = {
     totalBeneficiaries: {
@@ -25,6 +28,8 @@ export function DashboardSummary() {
     },
   }
 
+  
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <Card>
@@ -33,10 +38,10 @@ export function DashboardSummary() {
             <div>
               <p className="text-sm font-medium text-gray-500">Total Beneficiaries (2025)</p>
               <div className="flex items-baseline mt-1">
-                <p className="text-2xl font-semibold">{summaryData.totalBeneficiaries.predicted.toLocaleString()}</p>
+                <p className="text-2xl font-semibold">{totalBeneficiaries.total_beneficiaries}</p>
                 <p className="ml-2 text-sm font-medium text-green-600 flex items-center">
                   <ArrowUpRight className="h-4 w-4 mr-1" />
-                  {summaryData.totalBeneficiaries.percentChange}%
+                  {totalBeneficiaries.total_beneficiaries}
                 </p>
               </div>
               <p className="text-sm text-gray-500 mt-1">
