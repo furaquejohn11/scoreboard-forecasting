@@ -255,10 +255,22 @@ async def get_highest_growth_district():
         # Group by year and district, count beneficiaries
         counts = df.groupby(['YEAR', 'DISTRICT']).size().unstack(fill_value=0)
 
-        # Convert counts to dictionary for JSON response
+        # Calculate total counts per year
+        yearly_totals = counts.sum(axis=1)
+
+        # Calculate percentages for each district per year
+        percentages = (counts.div(yearly_totals, axis=0) * 100).round(2)
+
+        # Convert counts and percentages to dictionary for JSON response
         counts_dict = counts.to_dict(orient='index')
-        counts_by_year = {str(year): {district: int(count) for district, count in districts.items()}
-                         for year, districts in counts_dict.items()}
+        percentages_dict = percentages.to_dict(orient='index')
+        counts_by_year = {
+            str(year): {
+                district: {"count": int(count), "percent": float(percentages_dict[year][district])}
+                for district, count in districts.items()
+            }
+            for year, districts in counts_dict.items()
+        }
 
         # Calculate year-over-year growth rates
         growth_rates = counts.pct_change() * 100  # Returns growth rate as percentage
@@ -286,7 +298,7 @@ async def get_highest_growth_district():
         total_beneficiaries = len(df)
 
         return {
-            "message": "Highest district growth per year with counts",
+            "message": "Highest district growth per year with counts and percentages",
             "total_beneficiaries": total_beneficiaries,
             "highest_growth_by_year": highest_growth,
             "counts_by_year": counts_by_year
