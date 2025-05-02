@@ -1,3 +1,4 @@
+
 import { DashboardSummary } from "@/components/dashboard-summary"
 import { ForecastOverview } from "@/components/forecast-overview"
 import { RegionalInsights } from "@/components/regional-insights"
@@ -11,6 +12,7 @@ export default async function DashboardPage() {
   const cookie = await cookies();
   const token = await cookie.get('token')?.value;
 
+  console.log(token);
   if (!token) {
     redirect('/login');
   }
