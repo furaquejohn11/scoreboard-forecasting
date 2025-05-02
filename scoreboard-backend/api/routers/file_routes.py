@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 import pandas as pd
 import io
 from typing import Dict
+from prophet import Prophet
 
 router = APIRouter()
 
@@ -305,8 +306,128 @@ async def get_highest_growth_district():
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing data: {str(e)}")
-async def get_beneficiary_forecast():
-    ...
+
+def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Process raw DataFrame to monthly exclusive household counts."""
+    df['DATE RECEIVED (MM/DD/YYYY)'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'])
+    df['ds'] = df['DATE RECEIVED (MM/DD/YYYY)'].dt.to_period('M').dt.to_timestamp()
+    per_month_df = df.groupby('ds')['HOUSEHOLD ID'].nunique().reset_index()
+    per_month_df.columns = ['ds', 'y']
+    return per_month_df
+
+@router.post("/forecast")
+async def forecast_beneficiary():
+    try:
+        if "current_df" not in global_data:
+            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
+
+        df = global_data["current_df"]
+
+        # Process raw DataFrame to get monthly unique household counts
+        per_month_df = process_dataframe(df)
+        
+        if 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
+            raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' (date) and 'y' (beneficiaries) columns")
+
+        per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+
+        # Initialize Prophet model
+        model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+        model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
+        model.fit(per_month_df)
+
+        # Create future dataframe for only the next month
+        future = model.make_future_dataframe(periods=1, freq='MS')
+        forecast = model.predict(future)
+
+        # Get current month data
+        latest_date = per_month_df['ds'].max()
+        current_month = latest_date.strftime('%B %Y')
+        current_count = per_month_df[per_month_df['ds'] == latest_date]['y'].iloc[0]
+
+        # Get next month forecast
+        forecast = forecast[forecast['ds'] > latest_date][['ds', 'yhat']]
+        next_month = forecast['ds'].iloc[0].strftime('%B %Y')
+        next_count = round(forecast['yhat'].iloc[0])
+
+        return {
+            "message": "Next month forecast generated successfully",
+            "current_month": {
+                "name": current_month,
+                "count": int(current_count)
+            },
+            "next_month": {
+                "name": next_month,
+                "forecast": int(next_count)
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating forecast: {str(e)}")
+
+
+
+# WALA MUNA TO
+@router.post("/forecast_by_category")
+async def forecast_by_category():
+    try:
+        if "current_df" not in global_data:
+            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
+
+        df = global_data["current_df"]
+        df['category'] = df.apply(assign_category, axis=1)
+        categories = df['category'].unique()
+
+        results = []
+
+        for category in categories:
+            # Process DataFrame for the specific category
+            per_month_df = process_dataframe(df, category)
+            
+            if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
+                continue  # Skip if no data for this category
+
+            per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+
+            # Initialize Prophet model
+            model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+            model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
+            model.fit(per_month_df)
+
+            # Create future dataframe for only the next month
+            future = model.make_future_dataframe(periods=1, freq='MS')
+            forecast = model.predict(future)
+
+            # Get current month data
+            latest_date = per_month_df['ds'].max()
+            current_month = latest_date.strftime('%B %Y')
+            current_count = per_month_df[per_month_df['ds'] == latest_date]['y'].iloc[0]
+
+            # Get next month forecast
+            forecast = forecast[forecast['ds'] > latest_date][['ds', 'yhat']]
+            next_month = forecast['ds'].iloc[0].strftime('%B %Y')
+            next_count = round(forecast['yhat'].iloc[0])
+
+            results.append({
+                "category": category,
+                "current_month": {
+                    "name": current_month,
+                    "count": int(current_count)
+                },
+                "next_month": {
+                    "name": next_month,
+                    "forecast": int(next_count)
+                }
+            })
+
+        return {
+            "message": "Next month forecasts by category generated successfully",
+            "forecasts": results
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating category forecasts: {str(e)}")
+
 async def get_regional_distribution():
     ...
 async def get_anomaly_detection():
