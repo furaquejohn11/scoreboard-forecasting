@@ -27,3 +27,17 @@ export interface DistrictStats {
     }
     highest_growth_by_year: GrowthInsight[]
   }
+
+
+  export interface GrowthData {
+    year: number;
+    district: string;
+    growth_rate_percent: number;
+  };
+  
+  export interface GrowthResponse {
+    message: string;
+    total_beneficiaries: number;
+    highest_growth_by_year: GrowthData[];
+    counts_by_year: Record<string, number>;
+  };
