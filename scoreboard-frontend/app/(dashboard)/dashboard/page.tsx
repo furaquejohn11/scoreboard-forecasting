@@ -1,7 +1,7 @@
 
 import { DashboardSummary } from "@/components/dashboard-summary"
 import { ForecastOverview } from "@/components/forecast-overview"
-import { RegionalInsights } from "@/components/regional-insights"
+import { RegionalInsights} from "@/components/regional-insights"
 import { AnomalyHighlights } from "@/components/anomaly-highlights"
 import { FeatureImportanceChart } from "@/components/feature-importance-chart"
 import { BeneficiaryTrends } from "@/components/beneficiary-trends"

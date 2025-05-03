@@ -70,7 +70,7 @@ export function Upload() {
         // alert(fileRowCount['row_count']);
 
 
-      // router.push("/dashboard")
+      router.push("/dashboard")
     } catch (err) {
       setError("Error processing the file. Please ensure it's a valid CSV/Excelk with the correct format.")
       console.error(err)
@@ -103,7 +103,13 @@ export function Upload() {
               <p className="text-sm text-gray-500">
                 {file ? file.name : "Drag and drop your CSV file here, or click to browse"}
               </p>
-              <input type="file" id="file-upload" className="sr-only" accept=".csv" onChange={handleFileChange} />
+              <input
+                  type="file"
+                  id="file-upload"
+                  className="sr-only"
+                  accept=".csv, .xlsx, .xls"
+                  onChange={handleFileChange}
+                />
               <label
                 htmlFor="file-upload"
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-emerald-600 border border-transparent rounded-md shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 cursor-pointer"
