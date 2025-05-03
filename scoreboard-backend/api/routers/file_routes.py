@@ -323,8 +323,14 @@ async def forecast_beneficiary():
 
         df = global_data["current_df"]
 
-        # Process raw DataFrame to get monthly unique household counts
-        per_month_df = process_dataframe(df)
+        # Process DataFrame to get monthly row counts (total beneficiaries)
+        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
+        if df['DATE RECEIVED'].isna().any():
+            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
+        
+        df['ds'] = df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
+        per_month_df = df.groupby('ds').size().reset_index(name='y')
+        per_month_df.columns = ['ds', 'y']
         
         if 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
             raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' (date) and 'y' (beneficiaries) columns")
@@ -350,6 +356,39 @@ async def forecast_beneficiary():
         next_month = forecast['ds'].iloc[0].strftime('%B %Y')
         next_count = round(forecast['yhat'].iloc[0])
 
+        # Get past 4 months' data (excluding current month)
+        past_months = []
+        for i in range(1, 5):  # Start from 1 to skip current month
+            month_date = latest_date - pd.offsets.MonthBegin(i)
+            month_data = per_month_df[per_month_df['ds'] == month_date]
+            if not month_data.empty:
+                past_months.append({
+                    "name": month_date.strftime('%B %Y'),
+                    "count": int(month_data['y'].iloc[0])
+                })
+        past_months = past_months[::-1]  # Reverse to show oldest to newest
+
+        # Calculate total for 2025 (current year)
+        current_year = 2025
+        # Get actual data for 2025 up to latest date
+        current_year_df = per_month_df[per_month_df['ds'].dt.year == current_year]
+        total_current_year_actual = current_year_df['y'].sum()
+
+        # Forecast remaining months of 2025
+        months_to_end = 12 - latest_date.month  # Months from next month to December
+        if months_to_end > 0:
+            future_2025 = model.make_future_dataframe(periods=months_to_end, freq='MS')
+            forecast_2025 = model.predict(future_2025)
+            # Filter for future dates in 2025
+            forecast_2025 = forecast_2025[(forecast_2025['ds'] > latest_date) & 
+                                        (forecast_2025['ds'].dt.year == current_year)][['ds', 'yhat']]
+            total_current_year_forecast = round(forecast_2025['yhat'].sum())
+        else:
+            total_current_year_forecast = 0  # No future months to forecast
+
+        # Total for 2025 = actual (Jan to latest) + forecast (remaining months)
+        total_2025 = total_current_year_actual + total_current_year_forecast
+
         return {
             "message": "Next month forecast generated successfully",
             "current_month": {
@@ -359,15 +398,20 @@ async def forecast_beneficiary():
             "next_month": {
                 "name": next_month,
                 "forecast": int(next_count)
+            },
+            "past_months": past_months,
+            "yearly_total": {
+                "year": current_year,
+                "total_forecast": int(total_2025),
+                "actual_until": current_month,
+                "actual_count": int(total_current_year_actual),
+                "forecasted_count": int(total_current_year_forecast)
             }
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating forecast: {str(e)}")
 
-
-
-# WALA MUNA TO
 @router.post("/forecast_by_category")
 async def forecast_by_category():
     try:
@@ -381,8 +425,17 @@ async def forecast_by_category():
         results = []
 
         for category in categories:
-            # Process DataFrame for the specific category
-            per_month_df = process_dataframe(df, category)
+            # Filter DataFrame for the specific category
+            category_df = df[df['category'] == category]
+            
+            # Process DataFrame to get monthly row counts (total beneficiaries)
+            category_df['DATE RECEIVED'] = pd.to_datetime(category_df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
+            if category_df['DATE RECEIVED'].isna().any():
+                continue  # Skip category if dates are invalid
+            
+            category_df['ds'] = category_df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
+            per_month_df = category_df.groupby('ds').size().reset_index(name='y')
+            per_month_df.columns = ['ds', 'y']
             
             if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
                 continue  # Skip if no data for this category
