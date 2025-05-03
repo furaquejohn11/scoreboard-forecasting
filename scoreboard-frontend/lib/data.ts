@@ -136,3 +136,54 @@ export const getTotalBeneficiaries = async (): Promise<TotalBeneficiaries> => {
     };
   }
   
+
+  export async function getYearlyTotalForecast(): Promise<{
+    year: number | "N/A";
+    totalForecast: number;
+  }> {
+    const response = await fetch(`${fileEndpoint}/forecast`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+  
+    if (!response.ok) {
+      return {
+        year: "N/A",
+        totalForecast: 0,
+      };
+    }
+  
+    const data = await response.json();
+  
+    return {
+      year: data.yearly_total?.year ?? "N/A",
+      totalForecast: data.yearly_total?.total_forecast ?? 0,
+    };
+  }
+
+type Forecast = {
+  category: string
+  current_month: { name: string; count: number }
+  next_month: { name: string; forecast: number }
+}
+
+// async function getForecastCategory() {
+//   const res = await fetch(`${fileEndpoint}/forecast_by_category`) // adjust endpoint as needed
+//   const json: { forecasts: Forecast[] } = await res.json()
+
+//   const processed = json.forecasts.map((item) => {
+//     const growth =
+//       ((item.next_month.forecast - item.current_month.count) /
+//         item.current_month.count) *
+//       100
+//     return {
+//       category: item.category,
+//       current: item.current_month.count,
+//       forecast: item.next_month.forecast,
+//       growth: parseFloat(growth.toFixed(1)),
+//     }
+//   })
+// }
+  

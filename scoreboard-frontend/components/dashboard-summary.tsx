@@ -1,7 +1,7 @@
 // "use client"
 
 import { Card, CardContent } from "@/components/ui/card"
-import { getLastYearHighestGrowthCategory, getLastYearHighestGrowthDistrict, getTotalBeneficiaries } from "@/lib/data"
+import { getLastYearHighestGrowthCategory, getLastYearHighestGrowthDistrict, getTotalBeneficiaries, getYearlyTotalForecast } from "@/lib/data"
 import { ArrowUpRight, ArrowDownRight,  Users, SquareEqual, TrendingUp, MapPin } from "lucide-react"
 
 async function beneficiariesInformation() {
@@ -35,6 +35,7 @@ export async function DashboardSummary() {
   const beneficiariesInfo = await beneficiariesInformation();
   const lastYearGrowthDistrict = await getLastYearHighestGrowthDistrict();
   const lastYearGrowthCategory = await getLastYearHighestGrowthCategory();
+  const predictedBeneficiaries = await getYearlyTotalForecast();
 
 
   return (
@@ -74,7 +75,7 @@ export async function DashboardSummary() {
                 Predicted Total Beneficiaries</p>
 
               <div className="flex items-baseline mt-1">
-                <p className="text-2xl font-semibold">{`N/A`}</p>
+                <p className="text-2xl font-semibold">{predictedBeneficiaries.totalForecast}</p>
                 <p className="ml-2 text-sm font-medium text-emerald-600">Beneficiaries</p>
               </div>
               <p className="text-sm text-gray-500 mt-1">By the end of {beneficiariesInfo.currentYear}</p>

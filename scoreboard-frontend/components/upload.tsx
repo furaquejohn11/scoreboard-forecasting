@@ -70,7 +70,7 @@ export function Upload() {
         // alert(fileRowCount['row_count']);
 
 
-      // router.push("/dashboard")
+      router.push("/dashboard")
     } catch (err) {
       setError("Error processing the file. Please ensure it's a valid CSV/Excelk with the correct format.")
       console.error(err)
