@@ -100,10 +100,14 @@ export function ForecastOverview() {
             />
             <YAxis />
             <Tooltip
-              formatter={(value, name) => [
-                value.toLocaleString(),
-                name === "growth" ? "Growth %" : name === "current" ? "April 2025" : "May 2025",
-              ]}
+              formatter={(value, name) => {
+                const labelMap: Record<string, string> = {
+                  current: "April 2025 (Actual)",
+                  forecast: "May 2025 (Forecast)",
+                  growth: "Growth %",
+                };
+                return [value.toLocaleString(), labelMap[name] ?? name];
+              }}
               labelFormatter={(label) => `Category: ${label}`}
             />
             <Legend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 10 }} />
