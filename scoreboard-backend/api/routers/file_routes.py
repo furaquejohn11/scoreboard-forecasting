@@ -358,7 +358,7 @@ async def forecast_beneficiary():
 
         # Get past 4 months' data (excluding current month)
         past_months = []
-        for i in range(1, 5):  # Start from 1 to skip current month
+        for i in range(1, 13):  # Start from 1 to skip current month
             month_date = latest_date - pd.offsets.MonthBegin(i)
             month_data = per_month_df[per_month_df['ds'] == month_date]
             if not month_data.empty:
