@@ -3,6 +3,7 @@ import pandas as pd
 import io
 from typing import Dict
 from prophet import Prophet
+import numpy as np
 
 router = APIRouter()
 
@@ -488,39 +489,69 @@ async def get_anomaly_detection():
 async def get_feature_importance():
     ...
 
+def convert_to_python_types(obj):
+    """Recursively convert NumPy types to Python native types."""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_to_python_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_python_types(item) for item in obj]
+    return obj
+
 @router.post("/historical_trends_forecast_category")
 async def historical_trends_forecast_category():
     try:
+        # Check global_data
         if "current_df" not in global_data or global_data["current_df"] is None:
             raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
 
         df = global_data["current_df"].copy()
 
-        # Validate DataFrame
+        # Validate DataFrame integrity
         if df.empty:
-            raise HTTPException(status_code=400, detail="DataFrame is empty.")
+            raise HTTPException(status_code=400, detail="DataFrame is empty after loading.")
+        if not isinstance(df, pd.DataFrame):
+            raise HTTPException(status_code=500, detail="Loaded data is not a valid pandas DataFrame.")
+
+        print(f"DataFrame shape: {df.shape}")
+        print(f"Columns: {df.columns.tolist()}")
 
         # Validate required columns
         required_columns = ['DATE RECEIVED (MM/DD/YYYY)']
         if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail="Required columns are missing.")
+            raise HTTPException(status_code=400, detail=f"Required columns are missing: {required_columns}")
 
-        # Handle missing or invalid data
+        # Handle missing data
         df = df.dropna(subset=required_columns)
         if df.empty:
             raise HTTPException(status_code=400, detail="No valid data after removing missing values.")
 
-        # Process dates
+        # Parse dates and filter future ones
         df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().any():
-            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
-        
+        df = df[df['DATE RECEIVED'].notna()]
+        today = pd.Timestamp.today()
+        df = df[df['DATE RECEIVED'] <= today]
+        print(f"Shape after date filtering: {df.shape}")
+        print(f"Invalid dates dropped: {df['DATE RECEIVED'].isna().sum()}")
+
+        if df.empty:
+            raise HTTPException(status_code=400, detail="All dates are invalid or in the future.")
+
         df['ds'] = df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
         df['YEAR'] = df['DATE RECEIVED'].dt.year
+        print(f"Unique months: {df['ds'].nunique()}")
 
         # Assign categories
         try:
             df['category'] = df.apply(assign_category, axis=1)
+            if df['category'].isna().any():
+                raise HTTPException(status_code=400, detail="NaN categories detected after assign_category.")
+            print("Category counts:\n", df['category'].value_counts(dropna=False).to_dict())
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error in assign_category: {str(e)}")
 
@@ -536,73 +567,116 @@ async def historical_trends_forecast_category():
         if len(invalid_categories) > 0:
             raise HTTPException(status_code=400, detail=f"Invalid categories found: {invalid_categories}")
 
-        # Initialize counts by year
         counts_by_year = {}
-
-        # Determine current year from latest date
         latest_date = df['ds'].max()
         current_year = latest_date.year
+        latest_month = latest_date.month
+        print(f"Current year: {current_year}, Latest month: {latest_month}")
 
-        # Process historical counts (years before current year)
+        # Historical counts
         historical_years = df[df['YEAR'] < current_year]['YEAR'].unique()
         for year in sorted(historical_years):
             year_df = df[df['YEAR'] == year]
             counts = year_df.groupby('category').size().to_dict()
             counts_by_year[str(year)] = {cat: int(counts.get(cat, 0)) for cat in valid_categories}
 
-        # Forecast for current year per category
-        forecast_current_year = {}
-        for category in valid_categories:
-            category_df = df[df['category'] == category]
-            
-            # Initialize forecast
-            forecast_current_year[category] = 0
+        # Monthly aggregate
+        per_month_df = df.groupby('ds').size().reset_index(name='y')
+        per_month_df.columns = ['ds', 'y']
+        per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+        print(f"Aggregated data shape: {per_month_df.shape}")
 
-            # Prepare data for Prophet
-            per_month_df = category_df.groupby('ds').size().reset_index(name='y')
-            per_month_df.columns = ['ds', 'y']
-            per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+        if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
+            raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' and 'y' columns")
 
-            if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
-                continue
+        per_month_df = per_month_df.drop_duplicates(subset=['ds'])
+        if per_month_df['y'].le(0).any():
+            raise HTTPException(status_code=400, detail="Beneficiary counts must be positive.")
 
-            # Check for sufficient data (at least 2 months)
-            if len(per_month_df) < 2:
-                continue
+        # Fallback for insufficient data
+        if len(per_month_df) < 2:
+            historical_avg = int(df.groupby('category').size().mean()) if not df.empty else 0
+            forecast_current_year = {cat: historical_avg for cat in valid_categories}
+            counts_by_year[str(current_year)] = forecast_current_year
+            result = {
+                "message": f"Historical trends and {current_year} forecast by category generated using historical average due to insufficient data",
+                "counts_by_year": counts_by_year
+            }
+            return convert_to_python_types(result)
 
-            # Prophet model
+        # Prophet model
+        try:
+            model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
+            model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
+            model.fit(per_month_df)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Prophet model fitting failed: {str(e)}")
+
+        # Actuals this year
+        current_year_df = per_month_df[per_month_df['ds'].dt.year == current_year]
+        total_current_year_actual = int(current_year_df['y'].sum()) if not current_year_df.empty else 0
+        print(f"Current year actual counts: {total_current_year_actual}")
+
+        # Forecast remaining months
+        months_to_end = 12 - latest_month
+        total_current_year_forecast = 0
+        if months_to_end > 0:
             try:
-                model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
-                model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
-                model.fit(per_month_df)
+                future_current_year = model.make_future_dataframe(periods=months_to_end, freq='MS')
+                forecast_data = model.predict(future_current_year)
+                forecast_data = forecast_data[
+                    (forecast_data['ds'] > latest_date) &
+                    (forecast_data['ds'].dt.year == current_year)
+                ][['ds', 'yhat']]
+                if forecast_data.empty:
+                    raise HTTPException(status_code=500, detail="Forecast data is empty. Check date coverage or model training.")
+                total_current_year_forecast = int(round(forecast_data['yhat'].sum()))
+                if total_current_year_forecast < 0:
+                    total_current_year_forecast = 0
+                print(f"Forecast for remaining months: {total_current_year_forecast}")
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Prophet model fitting failed for category {category}: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Prophet forecasting failed: {str(e)}")
 
-            # Get current year actual and forecast
-            current_year_df = per_month_df[per_month_df['ds'].dt.year == current_year]
-            total_current_year_actual = current_year_df['y'].sum()
+        total_current_year = total_current_year_actual + total_current_year_forecast
+        print(f"Total current year forecast: {total_current_year}")
 
-            months_to_end = 12 - latest_date.month
-            total_current_year_forecast = 0
-            if months_to_end > 0:
-                try:
-                    future_current_year = model.make_future_dataframe(periods=months_to_end, freq='MS')
-                    forecast_data = model.predict(future_current_year)
-                    forecast_data = forecast_data[(forecast_data['ds'] > latest_date) & 
-                                                (forecast_data['ds'].dt.year == current_year)][['ds', 'yhat']]
-                    total_current_year_forecast = round(forecast_data['yhat'].sum())
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Prophet forecasting failed for category {category}: {str(e)}")
+        # Forecast per category
+        forecast_current_year = {}
+        if total_current_year > 0:
+            category_proportions = {}
+            total_historical = 0
+            for category in valid_categories:
+                category_df = df[df['category'] == category]
+                category_count = int(category_df.groupby('ds').size().sum())
+                category_proportions[category] = category_count
+                total_historical += category_count
 
-            total_current_year = total_current_year_actual + total_current_year_forecast
-            forecast_current_year[category] = int(total_current_year)
+            if total_historical > 0:
+                for category in valid_categories:
+                    proportion = category_proportions.get(category, 0) / total_historical
+                    category_forecast = int(round(proportion * total_current_year))
+                    forecast_current_year[category] = category_forecast
+            else:
+                equal_share = int(total_current_year // len(valid_categories))
+                for category in valid_categories:
+                    forecast_current_year[category] = equal_share
+        else:
+            for category in valid_categories:
+                forecast_current_year[category] = 0
+
+        # Adjust sum
+        current_total = sum(forecast_current_year.values())
+        if current_total != total_current_year and forecast_current_year:
+            max_category = max(forecast_current_year, key=lambda x: forecast_current_year[x] if forecast_current_year[x] > 0 else -1)
+            forecast_current_year[max_category] += total_current_year - current_total
 
         counts_by_year[str(current_year)] = forecast_current_year
 
-        return {
-            "message": f"Historical trends and {current_year} forecast by category generated successfully",
+        result = {
+            "message": f"Historical trends and {current_year} full-year forecast by category generated successfully",
             "counts_by_year": counts_by_year
         }
+        return convert_to_python_types(result)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating category trends and forecast: {str(e)}")
