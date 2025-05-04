@@ -60,7 +60,7 @@ export function PastMonthsChart() {
       <CardHeader>
         <CardTitle>Past Monthly Beneficiaries</CardTitle>
         <CardDescription>
-          Trends in actual welfare counts from previous months
+          Trends in actual welfare counts from previous 12 months
         </CardDescription>
       </CardHeader>
       <CardContent>
