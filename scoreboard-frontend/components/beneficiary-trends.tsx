@@ -1,96 +1,193 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger
+} from "@/components/ui/tabs"
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from "recharts"
+import { useEffect, useState } from "react"
+
+type TrendData = {
+  year: string
+  [key: string]: number | string
+}
 
 export function BeneficiaryTrends() {
-  // Sample data - would come from your processed CSV
-  const categoryTrends = [
-    { year: "2021", Elderly: 1200, Children: 2100, Disabled: 950, "Low Income": 3200, Unemployed: 1800 },
-    { year: "2022", Elderly: 1300, Children: 2250, Disabled: 1000, "Low Income": 3400, Unemployed: 1650 },
-    { year: "2023", Elderly: 1450, Children: 2400, Disabled: 1100, "Low Income": 3600, Unemployed: 1500 },
-    { year: "2024", Elderly: 1600, Children: 2600, Disabled: 1200, "Low Income": 3900, Unemployed: 1400 },
-    { year: "2025", Elderly: 1830, Children: 2800, Disabled: 1350, "Low Income": 4120, Unemployed: 1300 },
-  ]
+  const [categoryTrends, setCategoryTrends] = useState<TrendData[]>([])
+  const [regionTrends, setRegionTrends] = useState<TrendData[]>([])
+  const [categoryInsights, setCategoryInsights] = useState<string[]>([])
+  const [regionInsights, setRegionInsights] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)  // New loading state
 
-  const regionTrends = [
-    { year: "2021", North: 2400, South: 3000, East: 1800, West: 2200, Central: 2800 },
-    { year: "2022", North: 2550, South: 3200, East: 1950, West: 2350, Central: 2950 },
-    { year: "2023", North: 2650, South: 3350, East: 2050, West: 2450, Central: 3050 },
-    { year: "2024", North: 2800, South: 3500, East: 2100, West: 2600, Central: 3200 },
-    { year: "2025", North: 3100, South: 3900, East: 2400, West: 2800, Central: 3600 },
-  ]
+  const generateInsights = (data: TrendData[]): string[] => {
+    if (!data.length) return []
+    const keys = Object.keys(data[0]).filter(k => k !== "year")
+    const insights: string[] = []
+
+    keys.forEach(key => {
+      const values = data.map(row => Number(row[key]))
+      const start = values[0]
+      const end = values[values.length - 1]
+      const diff = end - start
+
+      if (diff > 0) {
+        insights.push(`${key} increased from ${start} to ${end} between 2021 and 2025`)
+      } else if (diff < 0) {
+        insights.push(`${key} declined from ${start} to ${end} between 2021 and 2025`)
+      } else {
+        insights.push(`${key} remained stable from 2021 to 2025`)
+      }
+    })
+
+    const topKey = keys.reduce((a, b) =>
+      Number(data[data.length - 1][a]) > Number(data[data.length - 1][b]) ? a : b
+    )
+    insights.push(`${topKey} had the highest forecasted value in 2025`)
+
+    return insights
+  }
+
+  useEffect(() => {
+    const fetchTrends = async (
+      url: string,
+      transform: (raw: any) => TrendData[],
+      setData: (d: TrendData[]) => void,
+      setInsights: (i: string[]) => void
+    ) => {
+      try {
+        setLoading(true)  // Set loading to true when fetching starts
+        const res = await fetch(url, { method: "POST" })
+        if (!res.ok) return
+
+        const data = await res.json()
+        const transformed = transform(data)
+        setData(transformed)
+        setInsights(generateInsights(transformed))
+      } catch {
+        // Fail silently (return blank)
+        setData([])
+        setInsights([])
+      } finally {
+        setLoading(false)  // Set loading to false when fetch finishes (success or error)
+      }
+    }
+
+    fetchTrends(
+      "http://127.0.0.1:8000/api/file/historical_trends_forecast_category",
+      (data) =>
+        Object.entries(data.counts_by_year || {}).map(([year, counts]) => ({
+          year,
+          ...(counts as Record<string, number>)
+        })),
+      setCategoryTrends,
+      setCategoryInsights
+    )
+
+    fetchTrends(
+      "http://127.0.0.1:8000/api/file/historical_trends_forecast_district",
+      (data) =>
+        Object.entries(data.counts_by_year || {}).map(([year, districts]) => {
+          const flat: Record<string, number> = {}
+          for (const [region, value] of Object.entries(districts as Record<string, { count: number }>)) {
+            flat[region] = value.count
+          }
+          return { year, ...flat }
+        }),
+      setRegionTrends,
+      setRegionInsights
+    )
+  }, [])
+
+  const renderInsights = (insights: string[], title: string) => (
+    insights.length ? (
+      <div className="mt-6 space-y-2">
+        <h4 className="text-sm font-medium">{title}</h4>
+        <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
+          {insights.map((text, i) => <li key={i}>{text}</li>)}
+        </ul>
+      </div>
+    ) : null
+  )
+
+  const renderChart = (data: TrendData[]) => (
+    <div className="h-96">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="year" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          {data.length > 0 &&
+            Object.keys(data[0])
+              .filter(key => key !== "year")
+              .map((key, i) => (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={["#10b981", "#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444"][i % 5]}
+                  activeDot={{ r: 6 }}
+                />
+              ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Historical Trends & Forecast</CardTitle>
-        <CardDescription>Historical data (2021-2024) and predictions (2025)</CardDescription>
+        <CardDescription>
+          Historical data (2021–2024) and 2025 forecast
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="category">
           <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="category">By Category</TabsTrigger>
-            <TabsTrigger value="region">By Region</TabsTrigger>
+            <TabsTrigger value="region">By District</TabsTrigger>
           </TabsList>
 
           <TabsContent value="category">
-            <div className="h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={categoryTrends} margin={{ top: 20, right: 30, left: 20, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="Elderly" stroke="#10b981" activeDot={{ r: 8 }} />
-                  <Line type="monotone" dataKey="Children" stroke="#0ea5e9" />
-                  <Line type="monotone" dataKey="Disabled" stroke="#8b5cf6" />
-                  <Line type="monotone" dataKey="Low Income" stroke="#f59e0b" />
-                  <Line type="monotone" dataKey="Unemployed" stroke="#ef4444" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="mt-6 space-y-2">
-              <h4 className="text-sm font-medium">Trend Analysis:</h4>
-              <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
-                <li>Elderly beneficiaries show consistent growth with acceleration in 2025</li>
-                <li>Unemployment benefits have been steadily decreasing since 2021</li>
-                <li>Low income support shows the largest absolute numbers with steady growth</li>
-                <li>All categories except Unemployment are projected to increase in 2025</li>
-              </ul>
-            </div>
+            {loading ? (
+              <p className="text-gray-500 text-sm">Loading category data...</p>  // Display loading text
+            ) : categoryTrends.length ? (
+              <>
+                {renderChart(categoryTrends)}
+                {renderInsights(categoryInsights, "Category Insights:")}
+              </>
+            ) : <p className="text-gray-500 text-sm">No category data available.</p>}
           </TabsContent>
 
           <TabsContent value="region">
-            <div className="h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={regionTrends} margin={{ top: 20, right: 30, left: 20, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="North" stroke="#10b981" activeDot={{ r: 8 }} />
-                  <Line type="monotone" dataKey="South" stroke="#0ea5e9" />
-                  <Line type="monotone" dataKey="East" stroke="#8b5cf6" />
-                  <Line type="monotone" dataKey="West" stroke="#f59e0b" />
-                  <Line type="monotone" dataKey="Central" stroke="#ef4444" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="mt-6 space-y-2">
-              <h4 className="text-sm font-medium">Regional Insights:</h4>
-              <ul className="text-sm text-gray-600 space-y-1 list-disc pl-5">
-                <li>All regions show growth in beneficiary numbers from 2021-2025</li>
-                <li>North region shows the steepest growth curve for 2025</li>
-                <li>South region consistently maintains the highest number of beneficiaries</li>
-                <li>East region shows accelerated growth starting in 2024</li>
-              </ul>
-            </div>
+            {loading ? (
+              <p className="text-gray-500 text-sm">Loading regional data...</p>  // Display loading text
+            ) : regionTrends.length ? (
+              <>
+                {renderChart(regionTrends)}
+                {renderInsights(regionInsights, "Regional Insights:")}
+              </>
+            ) : <p className="text-gray-500 text-sm">No regional data available.</p>}
           </TabsContent>
         </Tabs>
       </CardContent>
