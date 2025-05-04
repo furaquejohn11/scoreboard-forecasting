@@ -1,9 +1,9 @@
 
 import { DashboardSummary } from "@/components/dashboard-summary"
 import { ForecastOverview } from "@/components/forecast-overview"
-import { RegionalInsights } from "@/components/regional-insights"
+import { RegionalInsights} from "@/components/regional-insights"
 import { AnomalyHighlights } from "@/components/anomaly-highlights"
-import { FeatureImportanceChart } from "@/components/feature-importance-chart"
+import { PastMonthsChart } from "@/components/past-months-chart"
 import { BeneficiaryTrends } from "@/components/beneficiary-trends"
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
@@ -35,7 +35,7 @@ export default async function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
           <AnomalyHighlights />
-          <FeatureImportanceChart />
+          <PastMonthsChart />
         </div>
 
         <div className="mt-6">

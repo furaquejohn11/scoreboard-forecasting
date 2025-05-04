@@ -488,7 +488,7 @@ async def get_anomaly_detection():
 async def get_feature_importance():
     ...
 
-@router.post("/fhistorical_trends_forecast_category")
+@router.post("/historical_trends_forecast_category")
 async def historical_trends_forecast_category():
     try:
         if "current_df" not in global_data or global_data["current_df"] is None:
@@ -607,7 +607,7 @@ async def historical_trends_forecast_category():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating category trends and forecast: {str(e)}")
 
-@router.post("/fhistorical_trends_forecast_district")
+@router.post("/historical_trends_forecast_district")
 async def historical_trends_forecast_district():
     try:
         if "current_df" not in global_data or global_data["current_df"] is None:
