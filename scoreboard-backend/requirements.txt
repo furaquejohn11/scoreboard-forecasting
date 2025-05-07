@@ -7,3 +7,5 @@ SQLAlchemy~=2.0.40
 bcrypt~=4.3.0
 openpyxl
 prophet~=1.1.6
+numpy~=2.2.5
+pytest~=8.3.5
