@@ -107,7 +107,7 @@ export function Upload() {
 
       router.push("/dashboard")
     } catch (err) {
-      setError("Error processing the file. Please ensure it's a valid CSV/Excelk with the correct format.")
+      setError("Error processing the file. Please ensure it's a valid CSV/Excel with the correct format.")
       console.error(err)
     } finally {
       setIsUploading(false)
