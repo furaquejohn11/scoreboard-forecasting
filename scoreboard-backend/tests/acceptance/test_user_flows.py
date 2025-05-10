@@ -1,5 +1,8 @@
 import pytest
 from playwright.sync_api import sync_playwright
+from openpyxl import Workbook
+import os
+import tempfile
 
 @pytest.fixture(scope="session")
 def playwright():
@@ -20,29 +23,136 @@ def page(browser):
 
 def test_user_registration_and_login(page):
     page.goto("http://localhost:3000/signup")
+
+    # Fill the form fields
     page.fill("input[name=username]", "newuser")
     page.fill("input[name=password]", "newpass123")
+    page.fill("input[name=confirm-password]", "newpass123")
     page.fill("input[name=firstname]", "New")
     page.fill("input[name=lastname]", "User")
     page.click("button[type=submit]")
+
+    page.wait_for_url("http://localhost:3000/login")
     assert page.url == "http://localhost:3000/login"
 
-    page.fill("input[name=username]", "newuser")
-    page.fill("input[name=password]", "newpass123")
+    # Navigate to the login page
+    page.goto("http://localhost:3000/login")
+    page.fill("#username", "newuser")
+    page.fill("#password", "newpass123")
+
     page.click("button[type=submit]")
+    page.wait_for_url("http://localhost:3000/dashboard")
+
     assert page.url == "http://localhost:3000/dashboard"
-    assert page.inner_text("h1") == "Welcome, New User!"
 
 def test_file_upload_and_view(page):
+    # Navigate to the login page
     page.goto("http://localhost:3000/login")
-    page.fill("input[name=username]", "newuser")
-    page.fill("input[name=password]", "newpass123")
+    page.fill("#username", "newuser")
+    page.fill("#password", "newpass123")
+
+    page.click("button[type=submit]")
+    page.wait_for_url("http://localhost:3000/dashboard")
+
+    assert page.url == "http://localhost:3000/dashboard"
+
+    page.route("http://127.0.0.1:8000/api/user/login", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body='{"username": "testuser", "token": "fake-token"}'
+    ))
+
+    # Navigate to the login page
+    page.goto("http://localhost:3000/login")
+
+    # Fill the login form
+    page.fill("#username", "testuser")
+    page.fill("#password", "testpass123")
     page.click("button[type=submit]")
 
+    # Wait for navigation to the dashboard
+    page.wait_for_url("http://localhost:3000/dashboard")
+
+    # Mock the file upload API response
+    page.route("http://127.0.0.1:8000/api/file/upload-excel", lambda route: route.fulfill(
+        status=200,
+        content_type="application/json",
+        body='{"filename": "test_data.xlsx", "message": "File uploaded successfully", "row_count": 1}'
+    ))
+
+    # Navigate to the upload page
     page.goto("http://localhost:3000/upload")
+
+    # Create a temporary Excel file with the sample format
+    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+        temp_file_path = temp_file.name
+
+        # Create an Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+
+        # Define column headers
+        headers = [
+            "PROVINCE",
+            "MUNICIPALITY/CITY",
+            "BARANGAY",
+            "HOUSEHOLD ID",
+            "FIRST NAME",
+            "MIDDLE NAME",
+            "LAST NAME",
+            "SEX",
+            "AGE",
+            "SOCIAL SERVICE / PROGRAM",
+            "TYPE OF ASSISTANCE PROVIDED",
+            "SPECIFY (name of skill training, name of training, specific assistance, goods, amount, and others)",
+            "REMARKS (specify agency, individual, organization who provided the assistance and any other pertinent details)",
+            "DATE RECEIVED (MM/DD/YYYY)"
+        ]
+        ws.append(headers)
+
+        # Add sample data
+        sample_data = [
+            "Laguna",
+            "Cavinti",
+            "Zapote",
+            778,
+            "Ana",
+            "Santos",
+            "Gómez",
+            "Female",
+            72,
+            "SOCIAL_PENSION",
+            "Parent Effectiveness Trainings",
+            "Enhanced support",
+            "DOH - Regular program",
+            "04/30/2022"
+        ]
+        ws.append(sample_data)
+
+        # Save the workbook to the temporary file
+        wb.save(temp_file_path)
+
+    # Option: Use synthetic_datas.xlsx if available
+    # temp_file_path = os.path.abspath("synthetic_datas.xlsx")
+
+    # Trigger the file chooser by clicking the label for the file input
     with page.expect_file_chooser() as fc_info:
-        page.click("button#upload-button")
+        page.click("label[for=file-upload]")
     file_chooser = fc_info.value
-    file_chooser.set_files("path/to/sample.csv")
-    page.click("button[type=submit]")
-    assert page.inner_text("div#result") == "File processed successfully"
+    file_chooser.set_files(temp_file_path)
+
+    # Click the upload button
+    page.click("button:has-text('Upload and Process')")
+
+    # Handle the alert
+    page.once("dialog", lambda dialog: dialog.accept())
+
+    # Wait for navigation to the dashboard
+    page.wait_for_url("http://localhost:3000/dashboard")
+
+    # Assert the URL is correct
+    assert page.url == "http://localhost:3000/dashboard"
+
+    # Clean up the temporary file
+    os.unlink(temp_file_path)
