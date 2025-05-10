@@ -17,6 +17,9 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { useEffect, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react"
+import * as XLSX from 'xlsx'
 
 type PastMonthData = {
   name: string
@@ -55,13 +58,58 @@ export function PastMonthsChart() {
   const average = data.length ? Math.round(total / data.length) : 0
   const highest = data.reduce((max, d) => (d.count > max.count ? d : max), { name: "N/A", count: 0 })
 
+  const handleExportToExcel = () => {
+    // Prepare data for Excel
+    const excelData = data.map(item => ({
+      "Month": item.name,
+      "Beneficiaries": item.count
+    }));
+
+    // Add summary statistics
+    excelData.push(
+      {
+        "Month": "TOTAL",
+        "Beneficiaries": total
+      },
+      {
+        "Month": "AVERAGE",
+        "Beneficiaries": average
+      },
+      {
+        "Month": "PEAK MONTH",
+        "Beneficiaries": highest.count
+      }
+    );
+
+    // Create worksheet
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Past Months Data");
+
+    // Generate Excel file
+    XLSX.writeFile(wb, "past-months-data.xlsx");
+  };
+
   return (
     <Card className="col-span-1">
       <CardHeader>
-        <CardTitle>Past Monthly Beneficiaries</CardTitle>
-        <CardDescription>
-          Trends in actual welfare counts from previous 12 months
-        </CardDescription>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Past Monthly Beneficiaries</CardTitle>
+            <CardDescription>
+              Trends in actual welfare counts from previous 12 months
+            </CardDescription>
+          </div>
+          <Button 
+            onClick={handleExportToExcel} 
+            variant="outline" 
+            size="sm"
+            className="border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export to Excel
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="h-80">

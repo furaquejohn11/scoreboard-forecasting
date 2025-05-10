@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +18,7 @@ export function Upload() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<any | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -25,6 +26,39 @@ export function Upload() {
       setError(null)
     }
   }
+
+  const validateFile = (file: File) => {
+    const validExtensions = [".csv", ".xlsx", ".xls"];
+    if (!validExtensions.some(ext => file.name.endsWith(ext))) {
+      setError("Please upload a valid CSV or Excel file");
+      return false;
+    }
+    return true;
+  }
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile && validateFile(droppedFile)) {
+      setFile(droppedFile);
+      setError(null);
+    }
+  }, []);
 
   const handleUpload = async () => {
     if (!file) {
@@ -98,19 +132,30 @@ export function Upload() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
-            <FileUpload className="h-12 w-12 text-gray-400 mb-4" />
+          <div 
+            className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-12 text-center transition-colors duration-200 ease-in-out ${
+              isDragging 
+                ? 'border-emerald-500 bg-emerald-50' 
+                : 'border-gray-300 hover:border-gray-400'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <FileUpload className={`h-12 w-12 mb-4 transition-colors duration-200 ${
+              isDragging ? 'text-emerald-500' : 'text-gray-400'
+            }`} />
             <div className="space-y-2">
               <p className="text-sm text-gray-500">
                 {file ? file.name : "Drag and drop your CSV file here, or click to browse"}
               </p>
               <input
-                  type="file"
-                  id="file-upload"
-                  className="sr-only"
-                  accept=".csv, .xlsx, .xls"
-                  onChange={handleFileChange}
-                />
+                type="file"
+                id="file-upload"
+                className="sr-only"
+                accept=".csv, .xlsx, .xls"
+                onChange={handleFileChange}
+              />
               <label
                 htmlFor="file-upload"
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-emerald-600 border border-transparent rounded-md shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 cursor-pointer"
@@ -128,11 +173,11 @@ export function Upload() {
             </Alert>
           )}
         </CardContent>
-        <CardFooter className="flex justify-between">
-          <Button variant="outline" onClick={handlePreviewDashboard} className="flex items-center gap-2">
+        <CardFooter className="flex justify-end">
+          {/* <Button variant="outline" onClick={handlePreviewDashboard} className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
             Preview Dashboard with Sample Data
-          </Button>
+          </Button> */}
 
           <Button
             onClick={handleUpload}
