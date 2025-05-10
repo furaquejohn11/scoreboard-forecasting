@@ -68,6 +68,7 @@ export function Upload() {
         const fileRowCount = await response.json();
         setResults(fileRowCount);
         // alert(fileRowCount['row_count']);
+        alert("File uploaded successfully!");
 
 
       router.push("/dashboard")
@@ -153,13 +154,13 @@ export function Upload() {
       </Card>
 
       {/* {results && <ForecastResults results={results} />} */}
-      {results && (
+      {/* {results && (
       <div>
         <h1>{`File Name: ${results["filename"]}`}</h1>
         <h1>{`Message: ${results["message"]}`}</h1>
         <h1>{`Total Rows: ${results["row_count"]}`}</h1>
       </div>
-    )}
+    )} */}
     </div>
   )
 }

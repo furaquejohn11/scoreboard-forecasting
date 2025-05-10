@@ -68,7 +68,7 @@ export function Sidebar({ className }: SidebarProps) {
     {
       label: "Upload Data",
       icon: Upload,
-      href: "/",
+      href: "/upload",
       color: "text-blue-500",
     },
     {
@@ -83,12 +83,12 @@ export function Sidebar({ className }: SidebarProps) {
       href: "/reports",
       color: "text-orange-500",
     },
-    {
-      label: "Anomalies",
-      icon: AlertTriangle,
-      href: "/anomalies",
-      color: "text-amber-500",
-    },
+    // {
+    //   label: "Anomalies",
+    //   icon: AlertTriangle,
+    //   href: "/anomalies",
+    //   color: "text-amber-500",
+    // },
     {
       label: "Settings",
       icon: Settings,
