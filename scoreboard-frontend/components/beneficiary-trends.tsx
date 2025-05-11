@@ -24,6 +24,9 @@ import {
   ResponsiveContainer
 } from "recharts"
 import { useEffect, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react"
+import * as XLSX from 'xlsx'
 
 type TrendData = {
   year: string
@@ -36,6 +39,7 @@ export function BeneficiaryTrends() {
   const [categoryInsights, setCategoryInsights] = useState<string[]>([])
   const [regionInsights, setRegionInsights] = useState<string[]>([])
   const [loading, setLoading] = useState(true)  // New loading state
+  const [activeTab, setActiveTab] = useState("category")
 
   const generateInsights = (data: TrendData[]): string[] => {
     if (!data.length) return []
@@ -153,16 +157,49 @@ export function BeneficiaryTrends() {
     </div>
   )
 
+  const handleExportToExcel = () => {
+    const data = activeTab === "category" ? categoryTrends : regionTrends;
+    const insights = activeTab === "category" ? categoryInsights : regionInsights;
+    
+    // Create main data worksheet
+    const ws = XLSX.utils.json_to_sheet(data);
+    
+    // Create insights worksheet
+    const insightsData = insights.map(insight => ({ "Insight": insight }));
+    const wsInsights = XLSX.utils.json_to_sheet(insightsData);
+    
+    // Create workbook with both sheets
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `${activeTab === "category" ? "Category" : "Regional"} Trends`);
+    XLSX.utils.book_append_sheet(wb, wsInsights, "Insights");
+    
+    // Generate Excel file
+    XLSX.writeFile(wb, `beneficiary-trends-${activeTab}.xlsx`);
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Historical Trends & Forecast</CardTitle>
-        <CardDescription>
-          Historical data (2021–2024) and 2025 forecast
-        </CardDescription>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Historical Trends & Forecast</CardTitle>
+            <CardDescription>
+              Historical data (2021–2024) and 2025 forecast
+            </CardDescription>
+          </div>
+          <Button 
+            onClick={handleExportToExcel} 
+            variant="outline" 
+            size="sm"
+            className="border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export to Excel
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="category">
+        <Tabs defaultValue="category" onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="category">By Category</TabsTrigger>
             <TabsTrigger value="region">By District</TabsTrigger>

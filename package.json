@@ -1,0 +1,8 @@
+{
+    "name": "scoreboard-forecasting",
+    "version": "1.0.0",
+    "scripts": {
+        "dev": "npx concurrently \"npm --prefix scoreboard-frontend run dev\" \"cd scoreboard-backend && set PYTHONIOENCODING=utf-8 && fastapi dev main.py\"",
+        "install-all": "npx concurrently \"npm --prefix scoreboard-frontend install\" \"pip install -r scoreboard-backend/requirements.txt\""
+    }
+}

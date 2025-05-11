@@ -4,6 +4,9 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts"
 import { getHighestGrowthDistrict } from "@/lib/data"
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react"
+import * as XLSX from 'xlsx'
 
 interface PieData {
   name: string
@@ -82,13 +85,51 @@ export function RegionalInsights() {
     )
   }
 
+  const handleExportToExcel = () => {
+    // Prepare data for Excel
+    const excelData = pieData.map(item => ({
+      "District": item.name,
+      "Beneficiaries": item.value,
+      "Percentage": `${item.percentage}%`
+    }));
+
+    // Add summary row
+    const totalBeneficiaries = pieData.reduce((sum, d) => sum + d.value, 0);
+    excelData.push({
+      "District": "TOTAL",
+      "Beneficiaries": totalBeneficiaries,
+      "Percentage": "100%"
+    });
+
+    // Create worksheet
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Regional Distribution");
+
+    // Generate Excel file
+    XLSX.writeFile(wb, "regional-distribution.xlsx");
+  };
+
   return (
     <Card className="col-span-1">
       <CardHeader>
-        <CardTitle>Regional Distribution (2025)</CardTitle>
-        <CardDescription>
-          Predicted beneficiary distribution by district
-        </CardDescription>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Regional Distribution (2025)</CardTitle>
+            <CardDescription>
+              Predicted beneficiary distribution by district
+            </CardDescription>
+          </div>
+          <Button 
+            onClick={handleExportToExcel} 
+            variant="outline" 
+            size="sm"
+            className="border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export to Excel
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="h-80">

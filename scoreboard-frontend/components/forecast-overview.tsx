@@ -18,6 +18,9 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { useEffect, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react"
+import * as XLSX from 'xlsx'
 
 type Forecast = {
   category: string
@@ -66,13 +69,56 @@ export function ForecastOverview() {
     fetchData()
   }, [])
 
+  const handleExportToExcel = () => {
+    // Prepare data for Excel
+    const excelData = data.map(item => ({
+      "Category": item.category,
+      "Current Month (April 2025)": item.current,
+      "Forecast (May 2025)": item.forecast,
+      "Growth %": item.growth
+    }));
+
+    // Add summary row
+    const totalCurrent = data.reduce((sum, d) => sum + d.current, 0);
+    const totalForecast = data.reduce((sum, d) => sum + d.forecast, 0);
+    const overallGrowth = ((totalForecast - totalCurrent) / totalCurrent) * 100;
+
+    excelData.push({
+      "Category": "TOTAL",
+      "Current Month (April 2025)": totalCurrent,
+      "Forecast (May 2025)": totalForecast,
+      "Growth %": parseFloat(overallGrowth.toFixed(1))
+    });
+
+    // Create worksheet
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Forecast Overview");
+
+    // Generate Excel file
+    XLSX.writeFile(wb, "forecast-overview.xlsx");
+  };
+
   return (
     <Card className="col-span-1">
       <CardHeader>
-        <CardTitle>Beneficiary Forecast by Category</CardTitle>
-        <CardDescription>
-          April 2025 vs. May 2025 projected beneficiaries
-        </CardDescription>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Beneficiary Forecast by Category</CardTitle>
+            <CardDescription>
+              April 2025 vs. May 2025 projected beneficiaries
+            </CardDescription>
+          </div>
+          <Button 
+            onClick={handleExportToExcel} 
+            variant="outline" 
+            size="sm"
+            className="border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export to Excel
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="h-80">
