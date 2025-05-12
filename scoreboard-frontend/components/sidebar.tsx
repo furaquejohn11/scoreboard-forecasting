@@ -72,6 +72,12 @@ export function Sidebar({ className }: SidebarProps) {
       color: "text-blue-500",
     },
     {
+      label: "Add Data",
+      icon: FileBarChart2,
+      href: "/add-data",
+      color: "text-indigo-500",
+    },
+    {
       label: "Beneficiaries",
       icon: Users,
       href: "/beneficiaries",

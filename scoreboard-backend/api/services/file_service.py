@@ -1,12 +1,22 @@
 from fastapi import HTTPException
 import pandas as pd
 import io
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from ai.prophet_service import ProphetService
 
 class FileService:
+    _instance = None
+    _global_data: Dict[str, pd.DataFrame] = {}
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(FileService, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        self._global_data: Dict[str, pd.DataFrame] = {}
+        # Initialize only once
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
 
     def get_current_dataframe(self) -> Optional[pd.DataFrame]:
         """Get the current DataFrame from global data."""
@@ -15,6 +25,44 @@ class FileService:
     def set_current_dataframe(self, df: pd.DataFrame) -> None:
         """Set the current DataFrame in global data."""
         self._global_data["current_df"] = df
+
+    def get_columns(self) -> List[str]:
+        """Get column names from current DataFrame."""
+        df = self.get_current_dataframe()
+        if df is None:
+            raise HTTPException(status_code=400, detail="No file uploaded")
+        return df.columns.tolist()
+
+    def add_new_data(self, new_data: dict) -> pd.DataFrame:
+        """Add new data to the existing DataFrame."""
+        df = self.get_current_dataframe()
+        if df is None:
+            raise HTTPException(status_code=400, detail="No file uploaded")
+
+        # Validate that all required columns are present in new_data
+        missing_columns = [col for col in df.columns if col not in new_data]
+        if missing_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required columns: {missing_columns}"
+            )
+
+        # Create a new row with the provided data
+        new_row = pd.DataFrame([new_data])
+        
+        # Ensure date column is in correct format
+        if 'DATE RECEIVED (MM/DD/YYYY)' in new_row.columns:
+            new_row['DATE RECEIVED (MM/DD/YYYY)'] = pd.to_datetime(
+                new_row['DATE RECEIVED (MM/DD/YYYY)']
+            ).dt.strftime('%m/%d/%Y')
+
+        # Append the new row to the existing DataFrame
+        updated_df = pd.concat([df, new_row], ignore_index=True)
+        
+        # Update the global data
+        self.set_current_dataframe(updated_df)
+        
+        return updated_df
 
     def read_excel_file(self, file_content: bytes, filename: str) -> pd.DataFrame:
         """Read Excel or CSV file content into a DataFrame."""
