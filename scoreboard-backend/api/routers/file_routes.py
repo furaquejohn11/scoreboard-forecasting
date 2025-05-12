@@ -1,13 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import pandas as pd
-import io
 from typing import Dict
-from prophet import Prophet
-import numpy as np
-from ..repositories.file_repository import FileRepository
+from api.services.file_service import FileService
 
 router = APIRouter()
-file_repository = FileRepository()
+file_repository = FileService()
 
 # Basis for file reading. You should update it
 '''@router.post("/csv-row-count")

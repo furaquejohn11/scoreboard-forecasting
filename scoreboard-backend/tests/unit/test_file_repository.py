@@ -3,11 +3,11 @@ import pandas as pd
 import numpy as np
 from fastapi import HTTPException
 from datetime import datetime
-from api.repositories.file_repository import FileRepository
+from api.services.file_service import FileService
 
 @pytest.fixture
 def file_repository():
-    return FileRepository()
+    return FileService()
 
 @pytest.fixture
 def sample_csv_content():
