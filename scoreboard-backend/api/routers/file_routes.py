@@ -37,6 +37,15 @@ async def read_excel(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
 
+@router.post("/remove-data")
+async def remove_data():
+    try:
+        df_empty = pd.DataFrame()
+        file_repository.set_current_dataframe(df_empty)
+        return {"message": "file removed successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
+
 @router.get("/total-beneficiaries")
 async def get_total_beneficiaries():
     try:
