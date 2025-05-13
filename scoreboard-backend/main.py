@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import user_router, file_router
+from api.routers import user_router, file_router, data_router
 from api.database.db import create_db_and_tables, get_session
 from contextlib import asynccontextmanager
 
@@ -9,9 +9,6 @@ async def lifespan(app: FastAPI):
     # Startup logic
     create_db_and_tables()
     yield
-
-
-app = FastAPI(lifespan=lifespan)
 
 
 app = FastAPI(lifespan=lifespan)
@@ -35,3 +32,4 @@ def index():
 
 app.include_router(user_router, prefix="/api/user", tags=['User'])
 app.include_router(file_router, prefix="/api/file", tags=['File'])
+app.include_router(data_router, prefix="/api/data", tags=['Data'])

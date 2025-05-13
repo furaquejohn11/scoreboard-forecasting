@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -27,12 +27,41 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useRouter } from "next/navigation"
 import { DialogTitle } from "@/components/ui/dialog"
 
+
+interface Credentials {
+  firstname: string;
+  lastname: string;
+  username: string;
+  id: number
+}
+
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [credentials, setCredentials] = useState<Credentials | null>(null)
+
+
+  useEffect(() => {
+    const fetchCredentials = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const userData = await response.json();
+          setCredentials(userData);
+        }
+      } catch (error) {
+        console.error("Error fetching user credentials:", error);
+      }
+    };
+
+    fetchCredentials();
+  }, []);
 
   // Load collapsed state from localStorage on component mount
   useEffect(() => {
@@ -54,6 +83,12 @@ export function Sidebar({ className }: SidebarProps) {
     localStorage.removeItem("token") // if used
     document.cookie = "token=; Max-Age=0; path=/; domain=localhost; expires=Thu, 01 Jan 1970 00:00:00 GMT;" // clear auth cookie if applicable
 
+    const response = await fetch("http://127.0.0.1:8000/api/file/remove-data", {
+      method: "POST",
+    });
+
+    console.log("Logout response:", response);
+
     // Redirect to login
     router.push("/login")
   }
@@ -68,8 +103,14 @@ export function Sidebar({ className }: SidebarProps) {
     {
       label: "Upload Data",
       icon: Upload,
-      href: "/",
+      href: "/upload",
       color: "text-blue-500",
+    },
+    {
+      label: "Add Data",
+      icon: FileBarChart2,
+      href: "/add-data",
+      color: "text-indigo-500",
     },
     {
       label: "Beneficiaries",
@@ -83,12 +124,12 @@ export function Sidebar({ className }: SidebarProps) {
       href: "/reports",
       color: "text-orange-500",
     },
-    {
-      label: "Anomalies",
-      icon: AlertTriangle,
-      href: "/anomalies",
-      color: "text-amber-500",
-    },
+    // {
+    //   label: "Anomalies",
+    //   icon: AlertTriangle,
+    //   href: "/anomalies",
+    //   color: "text-amber-500",
+    // },
     {
       label: "Settings",
       icon: Settings,
@@ -154,8 +195,10 @@ export function Sidebar({ className }: SidebarProps) {
                     <User className="h-4 w-4 text-gray-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Admin User</p>
-                    <p className="text-xs text-gray-500">admin@welfare.gov</p>
+                    <p className="text-sm font-medium">
+                      {credentials ? `${credentials.firstname} ${credentials.lastname}` : "Loading..."}
+                    </p>
+                    <p className="text-xs text-gray-500">{credentials?.username || "Loading..."}</p>
                   </div>
                 </div>
                 <Button variant="ghost" size="icon" onClick={handleLogout}>
@@ -226,15 +269,17 @@ export function Sidebar({ className }: SidebarProps) {
                     </div>
                     {!isCollapsed && (
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">Admin User</p>
-                        <p className="text-xs text-gray-500 truncate">admin@welfare.gov</p>
+                        <p className="text-sm font-medium truncate">
+                          {credentials ? `${credentials.firstname} ${credentials.lastname}` : "Loading..."}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">{credentials?.username || "Loading..."}</p>
                       </div>
                     )}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="right" hidden={!isCollapsed}>
-                  <p>Admin User</p>
-                  <p className="text-xs text-gray-500">admin@welfare.gov</p>
+                  <p>{credentials ? `${credentials.firstname} ${credentials.lastname}` : "Loading..."}</p>
+                  <p className="text-xs text-gray-500">{credentials?.username || "Loading..."}</p>
                 </TooltipContent>
               </Tooltip>
               {!isCollapsed && (

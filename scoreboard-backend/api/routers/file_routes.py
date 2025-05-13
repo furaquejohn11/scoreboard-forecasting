@@ -1,10 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import pandas as pd
-import io
 from typing import Dict
-from prophet import Prophet
+from api.services.file_service import FileService
 
 router = APIRouter()
+file_repository = FileService()
 
 # Basis for file reading. You should update it
 '''@router.post("/csv-row-count")
@@ -29,43 +29,32 @@ global_data: Dict[str, pd.DataFrame] = {}
 @router.post("/upload-excel")
 async def read_excel(file: UploadFile = File(...)):
     try:
-        if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
-            raise HTTPException(status_code=400, detail="Only Excel (.xlsx, .xls) or CSV (.csv) files are supported")
-
+        file_repository.validate_file_type(file.filename)
         content = await file.read()
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(io.StringIO(content.decode('utf-8')))
-        else:
-            excel_data = io.BytesIO(content)
-            df = pd.read_excel(excel_data, engine='openpyxl')
-
-        global_data["current_df"] = df
-
+        df = file_repository.read_excel_file(content, file.filename)
+        file_repository.set_current_dataframe(df)
         return {"filename": file.filename, "message": "File uploaded successfully", "row_count": len(df)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
+
+@router.post("/remove-data")
+async def remove_data():
+    try:
+        df_empty = pd.DataFrame()
+        file_repository.set_current_dataframe(df_empty)
+        return {"message": "file removed successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
 
 @router.get("/total-beneficiaries")
 async def get_total_beneficiaries():
     try:
-        if "current_df" not in global_data or global_data["current_df"] is None:
-            raise HTTPException(status_code=400, detail="No data available. Please upload a file first.")
-
-        df = global_data["current_df"]
-
-        if df.empty:
-            raise HTTPException(status_code=400, detail="DataFrame is empty.")
-
-        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().any():
-            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
-
-        df['YEAR'] = df['DATE RECEIVED'].dt.year
-
-        beneficiaries_per_year = df.groupby('YEAR').size().reset_index(name='BENEFICIARY_COUNT')
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
         
+        df = file_repository.process_dates(df)
+        beneficiaries_per_year = df.groupby('YEAR').size().reset_index(name='BENEFICIARY_COUNT')
         year_counts = beneficiaries_per_year.to_dict(orient='records')
-
         total_beneficiaries = len(df)
 
         return {
@@ -94,68 +83,40 @@ def assign_category(row):
 @router.get("/highest-category-growth")
 async def get_highest_growth_category():
     try:
-        # Check if DataFrame exists
-        if "current_df" not in global_data or global_data["current_df"] is None:
-            raise HTTPException(status_code=400, detail="No data available. Please upload a file first.")
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
+        file_repository.validate_required_columns(df, ['SOCIAL SERVICE / PROGRAM', 'DATE RECEIVED (MM/DD/YYYY)'])
 
-        # Get the stored DataFrame
-        df = global_data["current_df"].copy()
-
-        # Validate DataFrame
-        if df.empty:
-            raise HTTPException(status_code=400, detail="DataFrame is empty.")
-
-        # Validate required columns
-        required_columns = ['SOCIAL SERVICE / PROGRAM', 'DATE RECEIVED (MM/DD/YYYY)']
-        if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail="Required columns are missing.")
-
-        # Handle missing or invalid data
-        df = df.dropna(subset=required_columns)
+        df = df.dropna(subset=['SOCIAL SERVICE / PROGRAM', 'DATE RECEIVED (MM/DD/YYYY)'])
         if df.empty:
             raise HTTPException(status_code=400, detail="No valid data after removing missing values.")
 
-        # Validate SOCIAL SERVICE / PROGRAM
         valid_programs = ['LIVELIHOOD_ASSISTANCE', 'KALAHI', 'MEDICAL_SERVICES', 'SUPPLEMENTAL_FEEDING',
-                          'OTHER_PROGRAM', 'DISASTER_RELIEF_ASSISTANCE', 'OTHER_CAPABILITY_BUILDING_SUPPORT',
-                          'SOCIAL_PENSION', 'PWD_ASSISTANCE', 'EDUCATIONAL_ASSISTANCE', 'AICS', 'SLP']
+                         'OTHER_PROGRAM', 'DISASTER_RELIEF_ASSISTANCE', 'OTHER_CAPABILITY_BUILDING_SUPPORT',
+                         'SOCIAL_PENSION', 'PWD_ASSISTANCE', 'EDUCATIONAL_ASSISTANCE', 'AICS', 'SLP']
         invalid_programs = df[~df['SOCIAL SERVICE / PROGRAM'].isin(valid_programs)]['SOCIAL SERVICE / PROGRAM'].unique()
         if len(invalid_programs) > 0:
             raise HTTPException(status_code=400, detail=f"Invalid programs found: {invalid_programs}")
 
-        # Convert DATE RECEIVED to datetime and extract year
-        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().any():
-            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
-        df['YEAR'] = df['DATE RECEIVED'].dt.year
-
-        # Assign categories
+        df = file_repository.process_dates(df)
         df['CATEGORY'] = df.apply(assign_category, axis=1)
 
-        # Check for 'Unknown' category
         if 'Unknown' in df['CATEGORY'].values:
             unknown_programs = df[df['CATEGORY'] == 'Unknown']['SOCIAL SERVICE / PROGRAM'].unique()
             raise HTTPException(status_code=400, detail=f"Unknown programs found: {unknown_programs}")
 
-        # Group by year and category, count beneficiaries
         counts = df.groupby(['YEAR', 'CATEGORY']).size().unstack(fill_value=0)
-
-        # Convert counts to dictionary for JSON response
         counts_dict = counts.to_dict(orient='index')
         counts_by_year = {str(year): {category: int(count) for category, count in categories.items()}
                          for year, categories in counts_dict.items()}
 
-        # Calculate year-over-year growth rates
-        growth_rates = counts.pct_change() * 100  # Returns growth rate as percentage
-        growth_rates = growth_rates.round(2)  # Round to 2 decimal places
-
-        # Replace inf/-inf with None (happens when dividing by 0)
+        growth_rates = counts.pct_change() * 100
+        growth_rates = growth_rates.round(2)
         growth_rates = growth_rates.replace([float('inf'), -float('inf')], None)
 
-        # Find the category with the highest growth rate each year
         highest_growth = []
         for year in growth_rates.index:
-            if year == counts.index[0]:  # Skip first year (no previous year for growth)
+            if year == counts.index[0]:
                 continue
             year_data = growth_rates.loc[year]
             max_category = year_data.idxmax()
@@ -167,7 +128,6 @@ async def get_highest_growth_category():
                     "growth_rate_percent": max_growth
                 })
 
-        # Get total beneficiaries
         total_beneficiaries = len(df)
 
         return {
@@ -205,31 +165,16 @@ def assign_district(row):
 @router.get("/highest-growth-district")
 async def get_highest_growth_district():
     try:
-        # Check if DataFrame exists
-        if "current_df" not in global_data or global_data["current_df"] is None:
-            raise HTTPException(status_code=400, detail="No data available. Please upload a file first.")
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
+        file_repository.validate_required_columns(df, ['MUNICIPALITY/CITY', 'DATE RECEIVED (MM/DD/YYYY)'])
 
-        # Get the stored DataFrame
-        df = global_data["current_df"].copy()
-
-        # Validate DataFrame
-        if df.empty:
-            raise HTTPException(status_code=400, detail="DataFrame is empty.")
-
-        # Validate required columns
-        required_columns = ['MUNICIPALITY/CITY', 'DATE RECEIVED (MM/DD/YYYY)']
-        if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail="Required columns are missing.")
-
-        # Handle missing or invalid data
-        df = df.dropna(subset=required_columns)
+        df = df.dropna(subset=['MUNICIPALITY/CITY', 'DATE RECEIVED (MM/DD/YYYY)'])
         if df.empty:
             raise HTTPException(status_code=400, detail="No valid data after removing missing values.")
 
-        # Convert MUNICIPALITY/CITY to uppercase
         df['MUNICIPALITY/CITY'] = df['MUNICIPALITY/CITY'].str.upper()
 
-        # Validate MUNICIPALITY/CITY
         valid_cities = ['SAN PEDRO', 'BAY', 'CABUYAO', 'LOS BAÑOS', 'ALAMINOS', 'CALAUAN', 'LILIW', 
                         'NAGCARLAN', 'RIZAL', 'SAN PABLO', 'VICTORIA', 'CAVINTI', 'FAMY', 'KALAYAAN', 
                         'LUISIANA', 'LUMBAN', 'MABITAC', 'MAGDALENA', 'MAJAYJAY', 'PAETE', 'PAGSANJAN', 
@@ -239,30 +184,18 @@ async def get_highest_growth_district():
         if len(invalid_cities) > 0:
             raise HTTPException(status_code=400, detail=f"Invalid cities found: {invalid_cities}")
 
-        # Convert DATE RECEIVED to datetime and extract year
-        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().any():
-            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
-        df['YEAR'] = df['DATE RECEIVED'].dt.year
-
-        # Assign districts
+        df = file_repository.process_dates(df)
         df['DISTRICT'] = df.apply(assign_district, axis=1)
 
-        # Check for 'Unknown' district
+        valid_districts = ['First District', 'Second District', 'Third District', 'Fourth District', 'Lone District']
         if 'Unknown' in df['DISTRICT'].values:
             unknown_cities = df[df['DISTRICT'] == 'Unknown']['MUNICIPALITY/CITY'].unique()
             raise HTTPException(status_code=400, detail=f"Unknown cities found: {unknown_cities}")
 
-        # Group by year and district, count beneficiaries
         counts = df.groupby(['YEAR', 'DISTRICT']).size().unstack(fill_value=0)
-
-        # Calculate total counts per year
         yearly_totals = counts.sum(axis=1)
-
-        # Calculate percentages for each district per year
         percentages = (counts.div(yearly_totals, axis=0) * 100).round(2)
 
-        # Convert counts and percentages to dictionary for JSON response
         counts_dict = counts.to_dict(orient='index')
         percentages_dict = percentages.to_dict(orient='index')
         counts_by_year = {
@@ -273,17 +206,13 @@ async def get_highest_growth_district():
             for year, districts in counts_dict.items()
         }
 
-        # Calculate year-over-year growth rates
-        growth_rates = counts.pct_change() * 100  # Returns growth rate as percentage
-        growth_rates = growth_rates.round(2)  # Round to 2 decimal places
-
-        # Replace inf/-inf with None (happens when dividing by 0)
+        growth_rates = counts.pct_change() * 100
+        growth_rates = growth_rates.round(2)
         growth_rates = growth_rates.replace([float('inf'), -float('inf')], None)
 
-        # Find the district with the highest growth rate each year
         highest_growth = []
         for year in growth_rates.index:
-            if year == counts.index[0]:  # Skip first year (no previous year for growth)
+            if year == counts.index[0]:
                 continue
             year_data = growth_rates.loc[year]
             max_district = year_data.idxmax()
@@ -295,7 +224,6 @@ async def get_highest_growth_district():
                     "growth_rate_percent": max_growth
                 })
 
-        # Get total beneficiaries
         total_beneficiaries = len(df)
 
         return {
@@ -307,58 +235,30 @@ async def get_highest_growth_district():
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing data: {str(e)}")
 
-def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Process raw DataFrame to monthly exclusive household counts."""
-    df['DATE RECEIVED (MM/DD/YYYY)'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'])
-    df['ds'] = df['DATE RECEIVED (MM/DD/YYYY)'].dt.to_period('M').dt.to_timestamp()
-    per_month_df = df.groupby('ds')['HOUSEHOLD ID'].nunique().reset_index()
-    per_month_df.columns = ['ds', 'y']
-    return per_month_df
-
 @router.post("/forecast")
 async def forecast_beneficiary():
     try:
-        if "current_df" not in global_data:
-            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
-
-        df = global_data["current_df"]
-
-        # Process DataFrame to get monthly row counts (total beneficiaries)
-        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().any():
-            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
         
-        df['ds'] = df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
-        per_month_df = df.groupby('ds').size().reset_index(name='y')
-        per_month_df.columns = ['ds', 'y']
+        df = file_repository.process_dates(df)
+        per_month_df = file_repository.get_monthly_aggregate(df)
         
-        if 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
-            raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' (date) and 'y' (beneficiaries) columns")
+        if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
+            raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' and 'y' columns")
 
-        per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+        model = file_repository.create_prophet_model(per_month_df)
 
-        # Initialize Prophet model
-        model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
-        model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
-        model.fit(per_month_df)
-
-        # Create future dataframe for only the next month
-        future = model.make_future_dataframe(periods=1, freq='MS')
-        forecast = model.predict(future)
-
-        # Get current month data
         latest_date = per_month_df['ds'].max()
         current_month = latest_date.strftime('%B %Y')
         current_count = per_month_df[per_month_df['ds'] == latest_date]['y'].iloc[0]
 
-        # Get next month forecast
-        forecast = forecast[forecast['ds'] > latest_date][['ds', 'yhat']]
+        forecast = file_repository.forecast_future_months(model, latest_date, 1, latest_date.year)
         next_month = forecast['ds'].iloc[0].strftime('%B %Y')
         next_count = round(forecast['yhat'].iloc[0])
 
-        # Get past 4 months' data (excluding current month)
         past_months = []
-        for i in range(1, 13):  # Start from 1 to skip current month
+        for i in range(1, 13):
             month_date = latest_date - pd.offsets.MonthBegin(i)
             month_data = per_month_df[per_month_df['ds'] == month_date]
             if not month_data.empty:
@@ -366,27 +266,19 @@ async def forecast_beneficiary():
                     "name": month_date.strftime('%B %Y'),
                     "count": int(month_data['y'].iloc[0])
                 })
-        past_months = past_months[::-1]  # Reverse to show oldest to newest
+        past_months = past_months[::-1]
 
-        # Calculate total for 2025 (current year)
         current_year = 2025
-        # Get actual data for 2025 up to latest date
         current_year_df = per_month_df[per_month_df['ds'].dt.year == current_year]
         total_current_year_actual = current_year_df['y'].sum()
 
-        # Forecast remaining months of 2025
-        months_to_end = 12 - latest_date.month  # Months from next month to December
+        months_to_end = 12 - latest_date.month
         if months_to_end > 0:
-            future_2025 = model.make_future_dataframe(periods=months_to_end, freq='MS')
-            forecast_2025 = model.predict(future_2025)
-            # Filter for future dates in 2025
-            forecast_2025 = forecast_2025[(forecast_2025['ds'] > latest_date) & 
-                                        (forecast_2025['ds'].dt.year == current_year)][['ds', 'yhat']]
+            forecast_2025 = file_repository.forecast_future_months(model, latest_date, months_to_end, current_year)
             total_current_year_forecast = round(forecast_2025['yhat'].sum())
         else:
-            total_current_year_forecast = 0  # No future months to forecast
+            total_current_year_forecast = 0
 
-        # Total for 2025 = actual (Jan to latest) + forecast (remaining months)
         total_2025 = total_current_year_actual + total_current_year_forecast
 
         return {
@@ -415,49 +307,33 @@ async def forecast_beneficiary():
 @router.post("/forecast_by_category")
 async def forecast_by_category():
     try:
-        if "current_df" not in global_data:
-            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
-
-        df = global_data["current_df"]
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
+        
         df['category'] = df.apply(assign_category, axis=1)
         categories = df['category'].unique()
 
         results = []
 
         for category in categories:
-            # Filter DataFrame for the specific category
             category_df = df[df['category'] == category]
+            category_df = file_repository.process_dates(category_df)
             
-            # Process DataFrame to get monthly row counts (total beneficiaries)
-            category_df['DATE RECEIVED'] = pd.to_datetime(category_df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
             if category_df['DATE RECEIVED'].isna().any():
-                continue  # Skip category if dates are invalid
+                continue
             
-            category_df['ds'] = category_df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
-            per_month_df = category_df.groupby('ds').size().reset_index(name='y')
-            per_month_df.columns = ['ds', 'y']
+            per_month_df = file_repository.get_monthly_aggregate(category_df)
             
             if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
-                continue  # Skip if no data for this category
+                continue
 
-            per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+            model = file_repository.create_prophet_model(per_month_df)
 
-            # Initialize Prophet model
-            model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
-            model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
-            model.fit(per_month_df)
-
-            # Create future dataframe for only the next month
-            future = model.make_future_dataframe(periods=1, freq='MS')
-            forecast = model.predict(future)
-
-            # Get current month data
             latest_date = per_month_df['ds'].max()
             current_month = latest_date.strftime('%B %Y')
             current_count = per_month_df[per_month_df['ds'] == latest_date]['y'].iloc[0]
 
-            # Get next month forecast
-            forecast = forecast[forecast['ds'] > latest_date][['ds', 'yhat']]
+            forecast = file_repository.forecast_future_months(model, latest_date, 1, latest_date.year)
             next_month = forecast['ds'].iloc[0].strftime('%B %Y')
             next_count = round(forecast['yhat'].iloc[0])
 
@@ -481,50 +357,20 @@ async def forecast_by_category():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating category forecasts: {str(e)}")
 
-async def get_regional_distribution():
-    ...
-async def get_anomaly_detection():
-    ...
-async def get_feature_importance():
-    ...
-
 @router.post("/historical_trends_forecast_category")
 async def historical_trends_forecast_category():
     try:
-        if "current_df" not in global_data or global_data["current_df"] is None:
-            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
+        file_repository.validate_required_columns(df, ['DATE RECEIVED (MM/DD/YYYY)'])
 
-        df = global_data["current_df"].copy()
-
-        # Validate DataFrame
-        if df.empty:
-            raise HTTPException(status_code=400, detail="DataFrame is empty.")
-
-        # Validate required columns
-        required_columns = ['DATE RECEIVED (MM/DD/YYYY)']
-        if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail="Required columns are missing.")
-
-        # Handle missing or invalid data
-        df = df.dropna(subset=required_columns)
+        df = df.dropna(subset=['DATE RECEIVED (MM/DD/YYYY)'])
         if df.empty:
             raise HTTPException(status_code=400, detail="No valid data after removing missing values.")
 
-        # Process dates
-        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().any():
-            raise HTTPException(status_code=400, detail="Some dates in 'DATE RECEIVED' are invalid.")
-        
-        df['ds'] = df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
-        df['YEAR'] = df['DATE RECEIVED'].dt.year
+        df = file_repository.process_dates(df)
+        df['category'] = df.apply(assign_category, axis=1)
 
-        # Assign categories
-        try:
-            df['category'] = df.apply(assign_category, axis=1)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error in assign_category: {str(e)}")
-
-        # Validate categories
         valid_categories = [
             'Community Development & Welfare',
             'Educational & Financial Assistance',
@@ -536,73 +382,88 @@ async def historical_trends_forecast_category():
         if len(invalid_categories) > 0:
             raise HTTPException(status_code=400, detail=f"Invalid categories found: {invalid_categories}")
 
-        # Initialize counts by year
         counts_by_year = {}
-
-        # Determine current year from latest date
         latest_date = df['ds'].max()
         current_year = latest_date.year
+        latest_month = latest_date.month
 
-        # Process historical counts (years before current year)
         historical_years = df[df['YEAR'] < current_year]['YEAR'].unique()
         for year in sorted(historical_years):
             year_df = df[df['YEAR'] == year]
             counts = year_df.groupby('category').size().to_dict()
             counts_by_year[str(year)] = {cat: int(counts.get(cat, 0)) for cat in valid_categories}
 
-        # Forecast for current year per category
+        per_month_df = file_repository.get_monthly_aggregate(df)
+
+        if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
+            raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' and 'y' columns")
+
+        per_month_df = per_month_df.drop_duplicates(subset=['ds'])
+        if per_month_df['y'].le(0).any():
+            raise HTTPException(status_code=400, detail="Beneficiary counts must be positive.")
+
+        if len(per_month_df) < 2:
+            historical_avg = int(df.groupby('category').size().mean()) if not df.empty else 0
+            forecast_current_year = {cat: historical_avg for cat in valid_categories}
+            counts_by_year[str(current_year)] = forecast_current_year
+            result = {
+                "message": f"Historical trends and {current_year} forecast by category generated using historical average due to insufficient data",
+                "counts_by_year": counts_by_year
+            }
+            return file_repository.convert_to_python_types(result)
+
+        model = file_repository.create_prophet_model(per_month_df)
+
+        current_year_df = per_month_df[per_month_df['ds'].dt.year == current_year]
+        total_current_year_actual = int(current_year_df['y'].sum()) if not current_year_df.empty else 0
+
+        months_to_end = 12 - latest_month
+        total_current_year_forecast = 0
+        if months_to_end > 0:
+            forecast_data = file_repository.forecast_future_months(model, latest_date, months_to_end, current_year)
+            if forecast_data.empty:
+                raise HTTPException(status_code=500, detail="Forecast data is empty. Check date coverage or model training.")
+            total_current_year_forecast = int(round(forecast_data['yhat'].sum()))
+            if total_current_year_forecast < 0:
+                total_current_year_forecast = 0
+
+        total_current_year = total_current_year_actual + total_current_year_forecast
+
         forecast_current_year = {}
-        for category in valid_categories:
-            category_df = df[df['category'] == category]
-            
-            # Initialize forecast
-            forecast_current_year[category] = 0
+        if total_current_year > 0:
+            category_proportions = {}
+            total_historical = 0
+            for category in valid_categories:
+                category_df = df[df['category'] == category]
+                category_count = int(category_df.groupby('ds').size().sum())
+                category_proportions[category] = category_count
+                total_historical += category_count
 
-            # Prepare data for Prophet
-            per_month_df = category_df.groupby('ds').size().reset_index(name='y')
-            per_month_df.columns = ['ds', 'y']
-            per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+            if total_historical > 0:
+                for category in valid_categories:
+                    proportion = category_proportions.get(category, 0) / total_historical
+                    category_forecast = int(round(proportion * total_current_year))
+                    forecast_current_year[category] = category_forecast
+            else:
+                equal_share = int(total_current_year // len(valid_categories))
+                for category in valid_categories:
+                    forecast_current_year[category] = equal_share
+        else:
+            for category in valid_categories:
+                forecast_current_year[category] = 0
 
-            if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
-                continue
-
-            # Check for sufficient data (at least 2 months)
-            if len(per_month_df) < 2:
-                continue
-
-            # Prophet model
-            try:
-                model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
-                model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
-                model.fit(per_month_df)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Prophet model fitting failed for category {category}: {str(e)}")
-
-            # Get current year actual and forecast
-            current_year_df = per_month_df[per_month_df['ds'].dt.year == current_year]
-            total_current_year_actual = current_year_df['y'].sum()
-
-            months_to_end = 12 - latest_date.month
-            total_current_year_forecast = 0
-            if months_to_end > 0:
-                try:
-                    future_current_year = model.make_future_dataframe(periods=months_to_end, freq='MS')
-                    forecast_data = model.predict(future_current_year)
-                    forecast_data = forecast_data[(forecast_data['ds'] > latest_date) & 
-                                                (forecast_data['ds'].dt.year == current_year)][['ds', 'yhat']]
-                    total_current_year_forecast = round(forecast_data['yhat'].sum())
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Prophet forecasting failed for category {category}: {str(e)}")
-
-            total_current_year = total_current_year_actual + total_current_year_forecast
-            forecast_current_year[category] = int(total_current_year)
+        current_total = sum(forecast_current_year.values())
+        if current_total != total_current_year and forecast_current_year:
+            max_category = max(forecast_current_year, key=lambda x: forecast_current_year[x] if forecast_current_year[x] > 0 else -1)
+            forecast_current_year[max_category] += total_current_year - current_total
 
         counts_by_year[str(current_year)] = forecast_current_year
 
-        return {
-            "message": f"Historical trends and {current_year} forecast by category generated successfully",
+        result = {
+            "message": f"Historical trends and {current_year} full-year forecast by category generated successfully",
             "counts_by_year": counts_by_year
         }
+        return file_repository.convert_to_python_types(result)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating category trends and forecast: {str(e)}")
@@ -610,45 +471,23 @@ async def historical_trends_forecast_category():
 @router.post("/historical_trends_forecast_district")
 async def historical_trends_forecast_district():
     try:
-        if "current_df" not in global_data or global_data["current_df"] is None:
-            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
+        df = file_repository.get_current_dataframe()
+        file_repository.validate_dataframe(df)
+        file_repository.validate_required_columns(df, ['DATE RECEIVED (MM/DD/YYYY)', 'MUNICIPALITY/CITY'])
 
-        df = global_data["current_df"].copy()
-
-        if df.empty:
-            raise HTTPException(status_code=400, detail="DataFrame is empty.")
-
-        required_columns = ['DATE RECEIVED (MM/DD/YYYY)', 'MUNICIPALITY/CITY']
-        if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail="Required columns are missing.")
-
-        df = df.dropna(subset=required_columns)
+        df = df.dropna(subset=['DATE RECEIVED (MM/DD/YYYY)', 'MUNICIPALITY/CITY'])
         if df.empty:
             raise HTTPException(status_code=400, detail="No valid data after removing missing values.")
 
         df['MUNICIPALITY/CITY'] = df['MUNICIPALITY/CITY'].str.upper()
 
-        df['DATE RECEIVED'] = pd.to_datetime(df['DATE RECEIVED (MM/DD/YYYY)'], format='%m/%d/%Y', errors='coerce')
-        if df['DATE RECEIVED'].isna().all():
-            raise HTTPException(status_code=400, detail="All dates in 'DATE RECEIVED' are invalid.")
-        if df['DATE RECEIVED'].isna().any():
-            df = df.dropna(subset=['DATE RECEIVED'])
-
-        df['ds'] = df['DATE RECEIVED'].dt.to_period('M').dt.to_timestamp()
-        df['YEAR'] = df['DATE RECEIVED'].dt.year
-
-        try:
-            df['DISTRICT'] = df.apply(assign_district, axis=1)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error in assign_district: {str(e)}")
+        df = file_repository.process_dates(df)
+        df['DISTRICT'] = df.apply(assign_district, axis=1)
 
         valid_districts = ['First District', 'Second District', 'Third District', 'Fourth District', 'Lone District']
         if 'Unknown' in df['DISTRICT'].values:
             unknown_cities = df[df['DISTRICT'] == 'Unknown']['MUNICIPALITY/CITY'].unique()
             raise HTTPException(status_code=400, detail=f"Unknown cities found: {unknown_cities}")
-        invalid_districts = df[~df['DISTRICT'].isin(valid_districts)]['DISTRICT'].unique()
-        if len(invalid_districts) > 0:
-            raise HTTPException(status_code=400, detail=f"Invalid districts found: {invalid_districts}")
 
         counts_by_year = {}
 
@@ -664,9 +503,7 @@ async def historical_trends_forecast_district():
             counts = year_df.groupby('DISTRICT').size().to_dict()
             counts_by_year[str(year)] = {dist: {"count": int(counts.get(dist, 0))} for dist in valid_districts}
 
-        per_month_df = df.groupby('ds').size().reset_index(name='y')
-        per_month_df.columns = ['ds', 'y']
-        per_month_df['ds'] = pd.to_datetime(per_month_df['ds'])
+        per_month_df = file_repository.get_monthly_aggregate(df)
 
         if per_month_df.empty or 'ds' not in per_month_df.columns or 'y' not in per_month_df.columns:
             raise HTTPException(status_code=400, detail="Processed DataFrame must contain 'ds' and 'y' columns")
@@ -677,12 +514,7 @@ async def historical_trends_forecast_district():
         if len(per_month_df) < 2:
             raise HTTPException(status_code=400, detail="Insufficient data for forecasting (need at least 2 months).")
 
-        try:
-            model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
-            model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
-            model.fit(per_month_df)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Prophet model fitting failed: {str(e)}")
+        model = file_repository.create_prophet_model(per_month_df)
 
         latest_year_df = per_month_df[per_month_df['ds'].dt.year == latest_year]
         total_existing = latest_year_df['y'].sum() if not latest_year_df.empty else 0
@@ -690,16 +522,10 @@ async def historical_trends_forecast_district():
         months_to_end = 12 - latest_month
         total_forecast = 0
         if months_to_end > 0:
-            try:
-                future_latest_year = model.make_future_dataframe(periods=months_to_end, freq='MS')
-                forecast_data = model.predict(future_latest_year)
-                forecast_data = forecast_data[(forecast_data['ds'] > latest_date) & 
-                                             (forecast_data['ds'].dt.year == latest_year)][['ds', 'yhat']]
-                total_forecast = round(forecast_data['yhat'].sum())
-                if total_forecast < 0:
-                    total_forecast = 0
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Prophet forecasting failed: {str(e)}")
+            forecast_data = file_repository.forecast_future_months(model, latest_date, months_to_end, latest_year)
+            total_forecast = round(forecast_data['yhat'].sum())
+            if total_forecast < 0:
+                total_forecast = 0
 
         total_latest_year = total_existing + total_forecast
 
