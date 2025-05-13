@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from api.services.file_service import FileService
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/data", tags=["data"])
+router = APIRouter()
 
 class NewDataRequest(BaseModel):
     data: Dict[str, Any]

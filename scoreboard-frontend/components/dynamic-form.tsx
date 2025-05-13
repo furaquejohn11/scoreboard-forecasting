@@ -27,6 +27,8 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
   const [columns, setColumns] = useState<ColumnConfig[]>([]);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isExcelNotAvailable, setIsExcelNotAvailable] = useState(false);
+  const [isFetchingColumns, setIsFetchingColumns] = useState(true);
 
   useEffect(() => {
     fetchColumns();
@@ -75,9 +77,13 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
   };
 
   const fetchColumns = async () => {
+    setIsFetchingColumns(true);
     try {
       const response = await fetch('http://localhost:8000/api/data/data/columns');
-      if (!response.ok) throw new Error('Failed to fetch columns');
+      if (!response.ok) {
+        setIsExcelNotAvailable(true);
+        return;
+      }
       const data = await response.json();
       
       // Convert column names to ColumnConfig objects
@@ -91,15 +97,17 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
       }, {});
       setFormData(initialData);
     } catch (error) {
-      toast.error('Failed to load form structure');
+      setIsExcelNotAvailable(true);
       console.error('Error fetching columns:', error);
+    } finally {
+      setIsFetchingColumns(false);
     }
   };
 
-  const handleInputChange = (column: string, value: string) => {
+  const handleInputChange = (columnName: string, value: string) => {
     setFormData(prev => ({
       ...prev,
-      [column]: value
+      [columnName]: value
     }));
   };
 
@@ -157,6 +165,7 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
 
       const result = await response.json();
       toast.success('Data added successfully');
+      alert('Data added successfully');
       
       // Reset form
       const resetData = columns.reduce((acc: Record<string, string>, col: ColumnConfig) => {
@@ -241,24 +250,37 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
   return (
     <div className="w-full max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-6">Add New Data</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {columns.map((column) => (
-          <div key={column.name} className="space-y-2">
-            <Label htmlFor={column.name}>
-              {column.name}
-              {column.required && <span className="text-red-500 ml-1">*</span>}
-            </Label>
-            {renderInput(column)}
-          </div>
-        ))}
-        <Button 
-          type="submit" 
-          className="w-full mt-6"
-          disabled={isLoading}
-        >
-          {isLoading ? 'Adding...' : 'Add Data'}
-        </Button>
-      </form>
+      {isFetchingColumns ? (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading form structure...</p>
+        </div>
+      ) : columns.length === 0 ? (
+        <div className="text-center py-8">
+          <h3 className="text-xl font-semibold text-gray-800 mb-4">Data Upload Required</h3>
+          <p className="text-gray-600 mb-4">Adding data is not possible at the moment because the Excel file has not been uploaded yet.</p>
+          <p className="text-sm text-gray-500">Please upload your Excel file first to enable the data entry form.</p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {columns.map((column) => (
+            <div key={column.name} className="space-y-2">
+              <Label htmlFor={column.name}>
+                {column.name}
+                {column.required && <span className="text-red-500 ml-1">*</span>}
+              </Label>
+              {renderInput(column)}
+            </div>
+          ))}
+          <Button 
+            type="submit" 
+            className="w-full mt-6"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Adding...' : 'Add Data'}
+          </Button>
+        </form>
+      )}
     </div>
   );
 } 
