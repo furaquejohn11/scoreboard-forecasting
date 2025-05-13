@@ -79,7 +79,7 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
   const fetchColumns = async () => {
     setIsFetchingColumns(true);
     try {
-      const response = await fetch('http://localhost:8000/api/data/data/columns');
+      const response = await fetch('http://localhost:8000/api/data/columns');
       if (!response.ok) {
         setIsExcelNotAvailable(true);
         return;
@@ -151,7 +151,7 @@ export function DynamicForm({ onDataAdded }: DynamicFormProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/data/data/add', {
+      const response = await fetch('http://localhost:8000/api/data/add', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

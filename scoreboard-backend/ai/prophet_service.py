@@ -8,7 +8,8 @@ class ProphetService:
     def create_prophet_model(per_month_df: pd.DataFrame) -> Prophet:
         """Create and fit Prophet model."""
         # Make the seasonality true if need seasonality forecasting
-        model = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False)
+        model = Prophet(yearly_seasonality=False, weekly_seasonality=False, daily_seasonality=False, 
+                        changepoint_prior_scale=0.5, n_changepoints=50, changepoint_range=0.9)
         # model.add_seasonality(name='monthly', period=30.42, fourier_order=5)
         model.fit(per_month_df)
         return model
